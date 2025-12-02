@@ -23,6 +23,10 @@ module tb_top;
     wire lcd_rw;
     wire lcd_rs;
     wire [7:0] lcd_data;
+    
+    // Accuracy tracking (global)
+    integer accuracy_before_O, accuracy_before_X, accuracy_before_total;
+    integer accuracy_after_O, accuracy_after_X, accuracy_after_total;
 
     // =========================================
     // DUT (Device Under Test) Instantiation
@@ -72,6 +76,14 @@ module tb_top;
         btn_train = 0;   // Train button not pressed
         in_from_keypad = 3'b111;  // No key pressed
         
+        // Initialize accuracy tracking
+        accuracy_before_O = 0;
+        accuracy_before_X = 0;
+        accuracy_before_total = 0;
+        accuracy_after_O = 0;
+        accuracy_after_X = 0;
+        accuracy_after_total = 0;
+        
         // Reset sequence
         #100;
         rst = 0;  // Assert reset (active low)
@@ -84,23 +96,54 @@ module tb_top;
         $display("========================================");
         
         // ----------------------------------------
+        // Pre-Training Test (Before Learning)
+        // ----------------------------------------
+        $display("\n========================================");
+        $display("  Test 1: BEFORE Training");
+        $display("========================================");
+        test_predefined_patterns(1'b0);  // 0 = before training
+        
+        // ----------------------------------------
         // Training Test
         // ----------------------------------------
-        $display("\n[Test 1] Neural Network Training");
+        $display("\n========================================");
+        $display("  Test 2: Training Neural Network");
+        $display("========================================");
         test_training();
         
         // ----------------------------------------
-        // Neural Network Test with Predefined Data
-        // ----------------------------------------
-        $display("\n[Test 2] Neural Network O/X Classification");
-        test_predefined_patterns();
-        
-        // ----------------------------------------
-        // Test End
+        // Post-Training Test (After Learning)
         // ----------------------------------------
         $display("\n========================================");
-        $display("Test End: %0t ns", $time);
+        $display("  Test 3: AFTER Training");
         $display("========================================");
+        test_predefined_patterns(1'b1);  // 1 = after training
+        
+        // ----------------------------------------
+        // Test End & Summary
+        // ----------------------------------------
+        $display("\n\n");
+        $display("============================================================");
+        $display("         TRAINING EFFECTIVENESS SUMMARY");
+        $display("============================================================");
+        $display("");
+        $display("  +-------------+---------+---------+--------------+");
+        $display("  |   Metric    | BEFORE  |  AFTER  | Improvement  |");
+        $display("  +-------------+---------+---------+--------------+");
+        $display("  | O Patterns  |  %2d/10  |  %2d/10  |    %+3d%%     |", 
+                 accuracy_before_O, accuracy_after_O, 
+                 (accuracy_after_O - accuracy_before_O) * 10);
+        $display("  | X Patterns  |  %2d/10  |  %2d/10  |    %+3d%%     |", 
+                 accuracy_before_X, accuracy_after_X, 
+                 (accuracy_after_X - accuracy_before_X) * 10);
+        $display("  | Total       |  %2d/20  |  %2d/20  |    %+3d%%     |", 
+                 accuracy_before_total, accuracy_after_total, 
+                 (accuracy_after_total - accuracy_before_total) * 5);
+        $display("  +-------------+---------+---------+--------------+");
+        $display("");
+        $display("  Test Duration: %0t ns", $time);
+        $display("  Training Status: %s", DUT.training_done ? "COMPLETED" : "FAILED");
+        $display("\n============================================================\n");
         
         #1000;
         $finish;
@@ -197,6 +240,7 @@ module tb_top;
     
     // Task: Test with predefined O and X patterns
     task test_predefined_patterns;
+        input is_after_training;  // 0=before, 1=after
         integer i;
         integer correct_O, correct_X, total_correct;
         reg [15:0] test_O [0:9];
@@ -229,29 +273,40 @@ module tb_top;
             correct_O = 0;
             correct_X = 0;
             
-            $display("\n=== Testing O Patterns (Expected: O) ===");
+            $display("=== Testing O Patterns (Expected: O) ===");
             for (i = 0; i < 10; i = i + 1) begin
-                $display("\n[Test O #%0d]", i+1);
                 test_single_pattern(test_O[i], 1'b1, is_correct);  // 1=O is expected
                 if (is_correct) correct_O = correct_O + 1;
             end
             
-            $display("\n\n=== Testing X Patterns (Expected: X) ===");
+            $display("\n=== Testing X Patterns (Expected: X) ===");
             for (i = 0; i < 10; i = i + 1) begin
-                $display("\n[Test X #%0d]", i+1);
                 test_single_pattern(test_X[i], 1'b0, is_correct);  // 0=X is expected
                 if (is_correct) correct_X = correct_X + 1;
             end
             
-            // Display accuracy
+            // Calculate total
             total_correct = correct_O + correct_X;
-            $display("\n\n========================================");
+            
+            // Store results in global variables
+            if (is_after_training) begin
+                accuracy_after_O = correct_O;
+                accuracy_after_X = correct_X;
+                accuracy_after_total = total_correct;
+            end else begin
+                accuracy_before_O = correct_O;
+                accuracy_before_X = correct_X;
+                accuracy_before_total = total_correct;
+            end
+            
+            // Display accuracy
+            $display("\n========================================");
             $display("=== Classification Results ===");
             $display("========================================");
             $display("  O patterns: %0d/10 correct (%.1f%%)", correct_O, correct_O * 10.0);
             $display("  X patterns: %0d/10 correct (%.1f%%)", correct_X, correct_X * 10.0);
             $display("  Total: %0d/20 correct (%.1f%%)", total_correct, total_correct * 5.0);
-            $display("========================================");
+            $display("========================================\n");
         end
     endtask
     
@@ -262,9 +317,6 @@ module tb_top;
         output is_correct; // Output: whether prediction was correct
         reg result;
         begin
-            $display("  Pattern: %b (hex: %04h)", pattern, pattern);
-            $display("  Expected: %s", expected_O ? "O" : "X");
-            
             // Directly inject pattern into input_manager's combined_input_flags
             force DUT.INPUT_MGR.combined_input_flags = pattern;
             
@@ -276,16 +328,18 @@ module tb_top;
             result = DUT.nn_y;
             is_correct = (result == expected_O);
             
-            // Display results
-            $display("  Result: %s (Probability: %0d%%)", result ? "O" : "X", DUT.nn_o_prob_pct);
-            $display("  Correct: %s", is_correct ? "YES ✓" : "NO ✗");
-            $display("  LED: %b [bit7=%s, confidence=%0d%%]", 
-                     DUT.out_to_led, DUT.out_to_led[7] ? "O" : "X", DUT.nn_o_prob_pct);
+            // Display results (simple format)
+            $display("  %04h: Expected=%s, Got=%s, Prob=%0d%% [%s]", 
+                     pattern, 
+                     expected_O ? "O" : "X", 
+                     result ? "O" : "X", 
+                     DUT.nn_o_prob_pct,
+                     is_correct ? "OK" : "FAIL");
             
             // Release submit and force
             btn_submit = 0;
             release DUT.INPUT_MGR.combined_input_flags;
-            repeat(100) @(posedge clk);
+            repeat(50) @(posedge clk);  // Reduced wait time
         end
     endtask
 
