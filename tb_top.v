@@ -113,10 +113,10 @@ module tb_top;
     end
     
     // Monitor input accumulation
-    always @(DUT.input_count) begin
-        if (DUT.input_count > 0)
+    always @(DUT.INPUT_MGR.input_count) begin
+        if (DUT.INPUT_MGR.input_count > 0)
             $display("[%0t ns] Input count: %d, Current display: %b", 
-                     $time, DUT.input_count, DUT.current_display);
+                     $time, DUT.INPUT_MGR.input_count, DUT.current_display);
     end
     
     // Keypad scan output monitoring (commented out to prevent excessive output)
@@ -239,11 +239,11 @@ module tb_top;
             
             // Display final buffer contents
             $display("\n\n=== Final Input Buffer ===");
-            $display("  Total inputs captured: %0d", DUT.input_count);
+            $display("  Total inputs captured: %0d", DUT.INPUT_MGR.input_count);
             $display("\n  Individual 16-bit values:");
-            for (i = 0; i < DUT.input_count; i = i + 1) begin
+            for (i = 0; i < DUT.INPUT_MGR.input_count; i = i + 1) begin
                 $display("    Buffer[%2d]: %b (hex: %04h, dec: %0d)", 
-                         i, DUT.input_buffer[i], DUT.input_buffer[i], DUT.input_buffer[i]);
+                         i, DUT.INPUT_MGR.input_buffer[i], DUT.INPUT_MGR.input_buffer[i], DUT.INPUT_MGR.input_buffer[i]);
             end
             
             // Press submit button
@@ -251,15 +251,15 @@ module tb_top;
             btn_submit = 1;
             repeat(10000) @(posedge clk);  // 200us - wait for combination logic
             
-            // Display combined flags stored in DUT (AFTER submit)
-            $display("\n  Combined 16-bit flags (stored in top.v):");
-            $display("    %b (hex: %04h)", DUT.combined_input_flags, DUT.combined_input_flags);
+            // Display combined flags stored in INPUT_MGR (AFTER submit)
+            $display("\n  Combined 16-bit flags (stored in input_manager):");
+            $display("    %b (hex: %04h)", DUT.INPUT_MGR.combined_input_flags, DUT.INPUT_MGR.combined_input_flags);
             $display("    bit[15:0] = [#,0,*,D,9,8,7,C,6,5,4,B,3,2,1,A]");
             
             btn_submit = 0;
             repeat(5000) @(posedge clk);
             
-            $display("\n  After submit released - Input count: %d", DUT.input_count);
+            $display("\n  After submit released - Input count: %d", DUT.INPUT_MGR.input_count);
         end
     endtask
 

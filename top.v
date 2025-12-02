@@ -31,13 +31,11 @@ module top (
     reg btn_a_prev, btn_b_prev, btn_c_prev, btn_d_prev;
     wire btn_changed;
     
-    // Input buffer for accumulating multiple inputs
-    reg [15:0] input_buffer [0:15];  // Store up to 16 inputs
-    reg [3:0] input_count;           // Number of inputs stored (0-16)
-    reg w_combined_valid_prev;       // For edge detection
-    reg [15:0] current_display;      // Current value to display on 7-seg
-    reg input_submitted;             // Flag indicating submit button pressed
-    reg [15:0] combined_input_flags; // OR of all inputs (16-bit flags)
+    // Input manager outputs
+    wire [15:0] current_display;       // Current value to display on 7-seg
+    wire display_valid;                // Display update signal
+    wire [15:0] combined_input_flags;  // OR of all inputs (16-bit flags)
+    wire [3:0] input_count;            // Number of inputs stored (for debug)
 
     // IN
     keypad_scan KS (.clk(clk), .rst(rst), .in_from_keypad(in_from_keypad), // input
@@ -77,77 +75,28 @@ module top (
     // Combined valid: keypad valid OR button changed OR any button pressed
     assign w_combined_valid = w_valid || btn_changed || btn_a || btn_b || btn_c || btn_d;
 
-    // Input accumulation logic - only store when value changes
-    integer i;
-    reg input_processing;        // Flag to prevent multiple captures during long press
-    reg display_valid;           // Valid signal for display update
-    reg [15:0] prev_input_value; // Previous input value for comparison
-    reg [15:0] temp_combined;    // Temporary variable for combining inputs
-    
-    always @(posedge clk or negedge rst) begin
-        if (~rst) begin
-            input_count <= 0;
-            w_combined_valid_prev <= 0;
-            current_display <= 16'b0;
-            input_submitted <= 0;
-            input_processing <= 0;
-            display_valid <= 0;
-            prev_input_value <= 16'b0;
-            combined_input_flags <= 16'b0;
-            for (i = 0; i < 16; i = i + 1) begin
-                input_buffer[i] <= 16'b0;
-            end
-        end else begin
-            w_combined_valid_prev <= w_combined_valid;
-            display_valid <= 0;  // Default to 0, pulse high when new input
-            
-            // Detect rising edge of valid signal (button just pressed)
-            if (w_combined_valid && !w_combined_valid_prev && !input_processing) begin
-                // Only store if value is different from previous input
-                if (w_combined_value != prev_input_value && input_count < 16) begin
-                    input_buffer[input_count] <= w_combined_value;
-                    input_count <= input_count + 1;
-                    current_display <= w_combined_value;  // Update display
-                    display_valid <= 1;  // Signal display to update
-                    prev_input_value <= w_combined_value;  // Remember this value
-                end
-                input_processing <= 1;  // Start processing
-            end
-            // Detect falling edge of valid signal (button released)
-            else if (!w_combined_valid && w_combined_valid_prev && input_processing) begin
-                input_processing <= 0;  // Ready for next input
-            end
-            
-            // Submit button logic - combine all inputs and clear buffer
-            if (btn_submit && !input_submitted) begin
-                input_submitted <= 1;
-                
-                // Combine all inputs with OR operation using temporary variable
-                temp_combined = 16'b0;
-                for (i = 0; i < input_count; i = i + 1) begin
-                    temp_combined = temp_combined | input_buffer[i];
-                end
-                combined_input_flags <= temp_combined;  // Store result
-                
-                // combined_input_flags now contains OR of all inputs
-                // This can be used as neural network input
-            end else if (!btn_submit && input_submitted) begin
-                // Reset after submit button released
-                input_submitted <= 0;
-                input_count <= 0;
-                current_display <= 16'b0;
-                combined_input_flags <= 16'b0;
-                for (i = 0; i < 16; i = i + 1) begin
-                    input_buffer[i] <= 16'b0;
-                end
-            end
-        end
-    end
+    // Input Manager - handles input accumulation and combination
+    input_manager INPUT_MGR (
+        .clk(clk),
+        .rst(rst),
+        .input_value(w_combined_value),
+        .input_valid(w_combined_valid),
+        .btn_submit(btn_submit),
+        .current_display(current_display),
+        .display_valid(display_valid),
+        .combined_input_flags(combined_input_flags),
+        .input_count(input_count)
+    );
 
-    // OUT - Display current input on 7-segment (update only on new input)
-    display_seg DP_SEG (.clk(clk), .rst(rst), .scan_data(current_display), .valid(display_valid), // input
-                        .r7(w_r[7]), .r6(w_r[6]), .r5(w_r[5]), .r4(w_r[4]), // output
-                        .r3(w_r[3]), .r2(w_r[2]), .r1(w_r[1]), .r0(w_r[0]));
+    // OUT - Display current input on 7-segment
+    display_seg DP_SEG (
+        .clk(clk),
+        .rst(rst),
+        .scan_data(current_display),
+        .valid(display_valid),
+        .r7(w_r[7]), .r6(w_r[6]), .r5(w_r[5]), .r4(w_r[4]),
+        .r3(w_r[3]), .r2(w_r[2]), .r1(w_r[1]), .r0(w_r[0])
+    );
 
     always @(posedge clk or negedge rst) begin
         if (~rst)    out_to_led = 8'b00000000;
