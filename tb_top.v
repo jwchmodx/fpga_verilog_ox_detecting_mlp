@@ -12,6 +12,7 @@ module tb_top;
     reg [2:0] in_from_keypad;
     reg btn_a, btn_b, btn_c, btn_d;  // 4 extra buttons
     reg btn_submit;                   // Submit button
+    reg btn_train;                    // Train button
     
     // Output signals (declared as wire)
     wire [3:0] out_to_keypad;
@@ -35,6 +36,7 @@ module tb_top;
         .btn_c(btn_c),
         .btn_d(btn_d),
         .btn_submit(btn_submit),
+        .btn_train(btn_train),
         .out_to_keypad(out_to_keypad),
         .out_to_led(out_to_led),
         .out_to_seg_data(out_to_seg_data),
@@ -67,6 +69,7 @@ module tb_top;
         rst = 1;
         btn_a = 0; btn_b = 0; btn_c = 0; btn_d = 0;  // Buttons not pressed
         btn_submit = 0;  // Submit button not pressed
+        btn_train = 0;   // Train button not pressed
         in_from_keypad = 3'b111;  // No key pressed
         
         // Reset sequence
@@ -81,9 +84,15 @@ module tb_top;
         $display("========================================");
         
         // ----------------------------------------
+        // Training Test
+        // ----------------------------------------
+        $display("\n[Test 1] Neural Network Training");
+        test_training();
+        
+        // ----------------------------------------
         // Neural Network Test with Predefined Data
         // ----------------------------------------
-        $display("\n[Test] Neural Network O/X Classification");
+        $display("\n[Test 2] Neural Network O/X Classification");
         test_predefined_patterns();
         
         // ----------------------------------------
@@ -101,25 +110,38 @@ module tb_top;
     // Monitoring (Main Signal Change Detection)
     // =========================================
     
+    // Training progress monitoring
+    always @(DUT.current_epoch) begin
+        if (DUT.training_active)
+            $display("[%0t ns] Epoch: %0d", $time, DUT.current_epoch);
+    end
+    
+    always @(DUT.training_done) begin
+        if (DUT.training_done)
+            $display("[%0t ns] TRAINING COMPLETE!", $time);
+    end
+    
     // LED change monitoring (with neural network result interpretation)
     always @(out_to_led) begin
-        if (DUT.nn_result_valid) begin
+        if (DUT.training_active) begin
+            // During training, don't spam LED changes
+        end else if (DUT.training_done) begin
+            $display("[%0t ns] LED: Training Done - All LEDs ON", $time);
+        end else if (DUT.nn_result_valid) begin
             $display("[%0t ns] LED Change (NN Result): %b [LED[7]=%s, Confidence=%0d%%]", 
                      $time, out_to_led, out_to_led[7] ? "O" : "X", DUT.nn_o_prob_pct);
-        end else begin
-            $display("[%0t ns] LED Change: %b", $time, out_to_led);
         end
     end
     
-    // 7-segment data change monitoring (more detailed)
-    always @(out_to_seg_data) begin
-        if (out_to_seg_data != 8'h00)
-            $display("[%0t ns] SEG_DATA Change: %h (binary: %b)", $time, out_to_seg_data, out_to_seg_data);
-    end
+    // 7-segment data change monitoring (commented out to reduce spam)
+    // always @(out_to_seg_data) begin
+    //     if (out_to_seg_data != 8'h00)
+    //         $display("[%0t ns] SEG_DATA Change: %h (binary: %b)", $time, out_to_seg_data, out_to_seg_data);
+    // end
     
-    // Monitor input accumulation
+    // Monitor input accumulation (only in inference mode)
     always @(DUT.INPUT_MGR.input_count) begin
-        if (DUT.INPUT_MGR.input_count > 0)
+        if (!DUT.training_active && DUT.INPUT_MGR.input_count > 0)
             $display("[%0t ns] Input count: %d, Current display: %b", 
                      $time, DUT.INPUT_MGR.input_count, DUT.current_display);
     end
@@ -129,12 +151,57 @@ module tb_top;
     //     $display("[%0t ns] KEYPAD_SCAN: %b", $time, out_to_keypad);
     // end
     
+    // Task: Test training mode
+    task test_training;
+        integer wait_cycles;
+        begin
+            $display("\n  Starting training...");
+            $display("  Press train button...");
+            
+            // Press train button
+            btn_train = 1;
+            repeat(100) @(posedge clk);
+            btn_train = 0;
+            
+            $display("  Training started. Waiting for completion...");
+            
+            // Wait for training to complete (monitor training_active signal)
+            wait_cycles = 0;
+            while (DUT.training_active || !DUT.training_done) begin
+                @(posedge clk);
+                wait_cycles = wait_cycles + 1;
+                
+                // Print epoch progress every 5k cycles
+                if (wait_cycles % 5000 == 0) begin
+                    $display("    [%0t] Training... Epoch: %0d, Sample: %0d", 
+                             $time, DUT.current_epoch, DUT.current_sample);
+                end
+                
+                // Timeout after 5M cycles (safety)
+                if (wait_cycles > 5000000) begin
+                    $display("  ERROR: Training timeout!");
+                    $finish;
+                end
+            end
+            
+            $display("\n  ========================================");
+            $display("  Training Complete!");
+            $display("  Total cycles: %0d", wait_cycles);
+            $display("  Total time: %0t ns", $time);
+            $display("  ========================================\n");
+            
+            // Wait a bit after training
+            repeat(10000) @(posedge clk);
+        end
+    endtask
+    
     // Task: Test with predefined O and X patterns
     task test_predefined_patterns;
         integer i;
         integer correct_O, correct_X, total_correct;
         reg [15:0] test_O [0:9];
         reg [15:0] test_X [0:9];
+        reg is_correct;
         begin
             // Initialize test data (from tb_ox_mlp.v)
             test_O[0] = 16'b0111110110011111;
@@ -165,15 +232,15 @@ module tb_top;
             $display("\n=== Testing O Patterns (Expected: O) ===");
             for (i = 0; i < 10; i = i + 1) begin
                 $display("\n[Test O #%0d]", i+1);
-                test_single_pattern(test_O[i], 1'b1);  // 1=O is expected
-                if (DUT.nn_y == 1'b1) correct_O = correct_O + 1;
+                test_single_pattern(test_O[i], 1'b1, is_correct);  // 1=O is expected
+                if (is_correct) correct_O = correct_O + 1;
             end
             
             $display("\n\n=== Testing X Patterns (Expected: X) ===");
             for (i = 0; i < 10; i = i + 1) begin
                 $display("\n[Test X #%0d]", i+1);
-                test_single_pattern(test_X[i], 1'b0);  // 0=X is expected
-                if (DUT.nn_y == 1'b0) correct_X = correct_X + 1;
+                test_single_pattern(test_X[i], 1'b0, is_correct);  // 0=X is expected
+                if (is_correct) correct_X = correct_X + 1;
             end
             
             // Display accuracy
@@ -192,6 +259,8 @@ module tb_top;
     task test_single_pattern;
         input [15:0] pattern;
         input expected_O;  // 1 if expecting O, 0 if expecting X
+        output is_correct; // Output: whether prediction was correct
+        reg result;
         begin
             $display("  Pattern: %b (hex: %04h)", pattern, pattern);
             $display("  Expected: %s", expected_O ? "O" : "X");
@@ -203,9 +272,13 @@ module tb_top;
             btn_submit = 1;
             repeat(100) @(posedge clk);
             
+            // Capture result before any changes
+            result = DUT.nn_y;
+            is_correct = (result == expected_O);
+            
             // Display results
-            $display("  Result: %s (Probability: %0d%%)", DUT.nn_y ? "O" : "X", DUT.nn_o_prob_pct);
-            $display("  Correct: %s", (DUT.nn_y == expected_O) ? "YES ✓" : "NO ✗");
+            $display("  Result: %s (Probability: %0d%%)", result ? "O" : "X", DUT.nn_o_prob_pct);
+            $display("  Correct: %s", is_correct ? "YES ✓" : "NO ✗");
             $display("  LED: %b [bit7=%s, confidence=%0d%%]", 
                      DUT.out_to_led, DUT.out_to_led[7] ? "O" : "X", DUT.nn_o_prob_pct);
             

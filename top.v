@@ -10,6 +10,7 @@ module top (
     input  btn_c,  // Extra button C
     input  btn_d,  // Extra button D
     input  btn_submit,  // Submit button to finalize input sequence
+    input  btn_train,   // Train button to start training
     output [3:0] out_to_keypad,
     output reg [7:0] out_to_led,
     output [7:0] out_to_seg_data,
@@ -38,12 +39,24 @@ module top (
     wire [3:0] input_count;            // Number of inputs stored (for debug)
     
     // Neural network signals
-    reg nn_learn;                      // Learning mode enable
-    reg nn_is_O;                       // Ground truth label (O=1, X=0)
     wire nn_y;                         // NN output: O(1) vs X(0)
     wire [6:0] nn_o_prob_pct;         // Probability of O (0-100%)
     wire signed [12:0] nn_y_score;    // Raw output score
     wire signed [17:0] nn_hidden_score; // Hidden layer score
+    
+    // Training controller signals
+    wire [15:0] train_x;               // Training input from controller
+    wire train_learn;                  // Training mode enable
+    wire train_is_O;                   // Training label (O=1, X=0)
+    wire training_active;              // Training in progress
+    wire [7:0] current_epoch;          // Current epoch number
+    wire [7:0] current_sample;         // Current sample index
+    wire training_done;                // Training complete flag
+    
+    // Neural network input multiplexer
+    wire [15:0] nn_x_input;            // Input to NN (training or inference)
+    wire nn_learn;                     // Learning mode (training or inference)
+    wire nn_is_O;                      // Label (training mode only)
     
     // Control signals for neural network
     reg nn_execute;                    // Trigger NN execution after submit
@@ -100,6 +113,29 @@ module top (
         .input_count(input_count)
     );
     
+    // Training Controller - manages training data and process
+    train_controller #(
+        .NUM_EPOCHS(10),
+        .NUM_TRAIN_O(100),
+        .NUM_TRAIN_X(100)
+    ) TRAIN_CTRL (
+        .clk(clk),
+        .rst_n(rst),
+        .btn_train(btn_train),
+        .train_x(train_x),
+        .train_learn(train_learn),
+        .train_is_O(train_is_O),
+        .training_active(training_active),
+        .current_epoch(current_epoch),
+        .current_sample(current_sample),
+        .training_done(training_done)
+    );
+    
+    // Multiplexer: Training mode or Inference mode
+    assign nn_x_input = training_active ? train_x : combined_input_flags;
+    assign nn_learn = training_active ? train_learn : 1'b0;
+    assign nn_is_O = training_active ? train_is_O : 1'b0;
+    
     // Neural Network - O vs X classifier
     mlp_OX #(
         .W(8),      // 8-bit weights
@@ -108,7 +144,7 @@ module top (
     ) NN_OX (
         .clk(clk),
         .rst_n(rst),
-        .x(combined_input_flags),
+        .x(nn_x_input),
         .learn(nn_learn),
         .is_O(nn_is_O),
         .y(nn_y),
@@ -122,35 +158,59 @@ module top (
         if (~rst) begin
             btn_submit_prev <= 0;
             nn_execute <= 0;
-            nn_learn <= 0;
-            nn_is_O <= 0;
         end else begin
             btn_submit_prev <= btn_submit;
             
             // Detect submit button press (rising edge)
-            if (btn_submit && !btn_submit_prev) begin
-                nn_execute <= 1;  // Trigger NN inference
-                // For now, inference mode only (learn=0)
-                // Later can add learning with additional buttons
+            if (btn_submit && !btn_submit_prev && !training_active) begin
+                nn_execute <= 1;  // Trigger NN inference (only when not training)
             end else begin
                 nn_execute <= 0;
             end
         end
     end
 
-    // OUT - Display current input on 7-segment
+    // 7-segment display multiplexer
+    wire [15:0] seg_display_data;
+    wire seg_display_valid;
+    reg [15:0] epoch_display;
+    
+    // Convert epoch number to one-hot for display
+    // Display rightmost digit of epoch number (0-9)
+    always @(*) begin
+        case (current_epoch % 10)
+            0: epoch_display = 16'b0100000000000000;  // '0'
+            1: epoch_display = 16'b0000000000000010;  // '1'
+            2: epoch_display = 16'b0000000000000100;  // '2'
+            3: epoch_display = 16'b0000000000001000;  // '3'
+            4: epoch_display = 16'b0000000000100000;  // '4'
+            5: epoch_display = 16'b0000000001000000;  // '5'
+            6: epoch_display = 16'b0000000010000000;  // '6'
+            7: epoch_display = 16'b0000001000000000;  // '7'
+            8: epoch_display = 16'b0000010000000000;  // '8'
+            9: epoch_display = 16'b0000100000000000;  // '9'
+            default: epoch_display = 16'b0;
+        endcase
+    end
+    
+    // Training mode: display epoch number
+    // Inference mode: display current input
+    assign seg_display_data = training_active ? epoch_display : current_display;
+    assign seg_display_valid = training_active ? 1'b1 : display_valid;
+
+    // OUT - Display on 7-segment
     display_seg DP_SEG (
         .clk(clk),
         .rst(rst),
-        .scan_data(current_display),
-        .valid(display_valid),
+        .scan_data(seg_display_data),
+        .valid(seg_display_valid),
         .r7(w_r[7]), .r6(w_r[6]), .r5(w_r[5]), .r4(w_r[4]),
         .r3(w_r[3]), .r2(w_r[2]), .r1(w_r[1]), .r0(w_r[0])
     );
 
     // LED display logic
-    // LED[7]: Neural network result (O=1, X=0)
-    // LED[6:0]: Probability visualization or pattern
+    // Training mode: Show progress (running LEDs)
+    // Inference mode: Show NN result
     reg nn_result_valid;  // Flag to show NN result
     
     always @(posedge clk or negedge rst) begin
@@ -158,39 +218,60 @@ module top (
             out_to_led = 8'b00000000;
             nn_result_valid = 0;
         end else begin
-            // When submit button is pressed, show NN result
-            if (btn_submit && !btn_submit_prev) begin
-                nn_result_valid = 1;
-            end
-            
-            if (nn_result_valid) begin
-                // LED[7]: O(1) or X(0)
-                // LED[6:0]: Probability bar (0-100% mapped to 0-7 LEDs)
-                out_to_led[7] = nn_y;
-                
-                // Probability bar: show LEDs based on confidence
-                // 0-14%: 0 LEDs, 14-28%: 1 LED, ... 85-100%: 7 LEDs
-                if (nn_o_prob_pct >= 85)      out_to_led[6:0] = 7'b1111111;
-                else if (nn_o_prob_pct >= 71) out_to_led[6:0] = 7'b0111111;
-                else if (nn_o_prob_pct >= 57) out_to_led[6:0] = 7'b0011111;
-                else if (nn_o_prob_pct >= 43) out_to_led[6:0] = 7'b0001111;
-                else if (nn_o_prob_pct >= 29) out_to_led[6:0] = 7'b0000111;
-                else if (nn_o_prob_pct >= 15) out_to_led[6:0] = 7'b0000011;
-                else                          out_to_led[6:0] = 7'b0000001;
-            end else begin
-                // Default: running LED pattern
-                if (cnt_led == 16000000) cnt_led = 0;
-                else                     cnt_led = cnt_led + 1;
+            if (training_active) begin
+                // Training mode: Running LEDs to show activity
+                nn_result_valid = 0;
+                if (cnt_led == 4000000) cnt_led = 0;  // Faster animation during training
+                else                    cnt_led = cnt_led + 1;
                 case (cnt_led)
-                    0:        out_to_led = 8'b00000001;
-                    2000000:  out_to_led = 8'b00000010;
-                    4000000:  out_to_led = 8'b00000100;
-                    6000000:  out_to_led = 8'b00001000;
-                    8000000:  out_to_led = 8'b00010000;
-                    10000000: out_to_led = 8'b00100000;
-                    12000000: out_to_led = 8'b01000000;
-                    14000000: out_to_led = 8'b10000000;
+                    0:       out_to_led = 8'b00000001;
+                    500000:  out_to_led = 8'b00000010;
+                    1000000: out_to_led = 8'b00000100;
+                    1500000: out_to_led = 8'b00001000;
+                    2000000: out_to_led = 8'b00010000;
+                    2500000: out_to_led = 8'b00100000;
+                    3000000: out_to_led = 8'b01000000;
+                    3500000: out_to_led = 8'b10000000;
                 endcase
+            end else if (training_done) begin
+                // Training complete: All LEDs on
+                out_to_led = 8'b11111111;
+            end else begin
+                // Inference mode
+                // When submit button is pressed, show NN result
+                if (btn_submit && !btn_submit_prev) begin
+                    nn_result_valid = 1;
+                end
+                
+                if (nn_result_valid) begin
+                    // LED[7]: O(1) or X(0)
+                    // LED[6:0]: Probability bar (0-100% mapped to 0-7 LEDs)
+                    out_to_led[7] = nn_y;
+                    
+                    // Probability bar: show LEDs based on confidence
+                    // 0-14%: 0 LEDs, 14-28%: 1 LED, ... 85-100%: 7 LEDs
+                    if (nn_o_prob_pct >= 85)      out_to_led[6:0] = 7'b1111111;
+                    else if (nn_o_prob_pct >= 71) out_to_led[6:0] = 7'b0111111;
+                    else if (nn_o_prob_pct >= 57) out_to_led[6:0] = 7'b0011111;
+                    else if (nn_o_prob_pct >= 43) out_to_led[6:0] = 7'b0001111;
+                    else if (nn_o_prob_pct >= 29) out_to_led[6:0] = 7'b0000111;
+                    else if (nn_o_prob_pct >= 15) out_to_led[6:0] = 7'b0000011;
+                    else                          out_to_led[6:0] = 7'b0000001;
+                end else begin
+                    // Default: running LED pattern
+                    if (cnt_led == 16000000) cnt_led = 0;
+                    else                     cnt_led = cnt_led + 1;
+                    case (cnt_led)
+                        0:        out_to_led = 8'b00000001;
+                        2000000:  out_to_led = 8'b00000010;
+                        4000000:  out_to_led = 8'b00000100;
+                        6000000:  out_to_led = 8'b00001000;
+                        8000000:  out_to_led = 8'b00010000;
+                        10000000: out_to_led = 8'b00100000;
+                        12000000: out_to_led = 8'b01000000;
+                        14000000: out_to_led = 8'b10000000;
+                    endcase
+                end
             end
         end
     end
