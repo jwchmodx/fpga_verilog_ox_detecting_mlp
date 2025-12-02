@@ -11,6 +11,7 @@ module tb_top;
     reg rst;
     reg [2:0] in_from_keypad;
     reg btn_a, btn_b, btn_c, btn_d;  // 4 extra buttons
+    reg btn_submit;                   // Submit button
     
     // Output signals (declared as wire)
     wire [3:0] out_to_keypad;
@@ -33,6 +34,7 @@ module tb_top;
         .btn_b(btn_b),
         .btn_c(btn_c),
         .btn_d(btn_d),
+        .btn_submit(btn_submit),
         .out_to_keypad(out_to_keypad),
         .out_to_led(out_to_led),
         .out_to_seg_data(out_to_seg_data),
@@ -64,6 +66,7 @@ module tb_top;
         // Initialization
         rst = 1;
         btn_a = 0; btn_b = 0; btn_c = 0; btn_d = 0;  // Buttons not pressed
+        btn_submit = 0;  // Submit button not pressed
         in_from_keypad = 3'b111;  // No key pressed
         
         // Reset sequence
@@ -78,147 +81,10 @@ module tb_top;
         $display("========================================");
         
         // ----------------------------------------
-        // Test 1: LED Sequential Lighting Test
+        // Random Input Sequence Test
         // ----------------------------------------
-        $display("\n[Test 1] LED Sequential Lighting Test");
-        // Wait to observe LED changes
-        // In real hardware, 2000000 clock cycles needed, but reduced for simulation
-        repeat(100) @(posedge clk);  // Reduced for faster simulation
-        $display("  LED State: %b", out_to_led);
-        
-        // ----------------------------------------
-        // Test 2: Button Input Test (A, B, C, D)
-        // ----------------------------------------
-        $display("\n[Test 2] Button Input Test");
-        $display("  Mapping: A=0, B=4, C=8, D=C");
-        
-        // Button A test (bit[0] -> displays '0')
-        $display("  Button A press (bit[0] -> should display '0')");
-        btn_a = 1;
-        repeat(50) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        repeat(50) @(posedge clk);
-        btn_a = 0;
-        repeat(200) @(posedge clk);
-        
-        // Button B test (bit[4] -> displays '4')
-        $display("  Button B press (bit[4] -> should display '4')");
-        btn_b = 1;
-        repeat(50) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        repeat(50) @(posedge clk);
-        btn_b = 0;
-        repeat(200) @(posedge clk);
-        
-        // Button C test (bit[8] -> displays '8')
-        $display("  Button C press (bit[8] -> should display '8')");
-        btn_c = 1;
-        repeat(50) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        repeat(50) @(posedge clk);
-        btn_c = 0;
-        repeat(200) @(posedge clk);
-        
-        // Button D test (bit[12] -> displays 'C')
-        $display("  Button D press (bit[12] -> should display 'C')");
-        btn_d = 1;
-        repeat(50) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        repeat(50) @(posedge clk);
-        btn_d = 0;
-        repeat(200) @(posedge clk);
-        
-        // ----------------------------------------
-        // Test 3: Keypad Input Test (All keys)
-        // ----------------------------------------
-        $display("\n[Test 3] Keypad Input Test");
-        $display("  Mapping: 1=1, 2=2, 3=3, 4=5, 5=6, 6=7, 7=9, 8=A, 9=B, *=D, 0=E, #=F");
-        
-        // Key '1' (bit[1] -> displays '1')
-        $display("  Key '1' press (bit[1] -> should display '1')");
-        press_keypad_key(4'b0100, 3'b100);
-        repeat(1000) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        
-        // Key '2' (bit[2] -> displays '2')
-        $display("  Key '2' press (bit[2] -> should display '2')");
-        press_keypad_key(4'b0100, 3'b010);
-        repeat(1000) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        
-        // Key '3' (bit[3] -> displays '3')
-        $display("  Key '3' press (bit[3] -> should display '3')");
-        press_keypad_key(4'b0100, 3'b001);
-        repeat(1000) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        
-        // Key '4' (bit[5] -> displays '5')
-        $display("  Key '4' press (bit[5] -> should display '5')");
-        press_keypad_key(4'b0010, 3'b100);
-        repeat(1000) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        
-        // Key '5' (bit[6] -> displays '6')
-        $display("  Key '5' press (bit[6] -> should display '6')");
-        press_keypad_key(4'b0010, 3'b010);
-        repeat(1000) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        
-        // Key '6' (bit[7] -> displays '7')
-        $display("  Key '6' press (bit[7] -> should display '7')");
-        press_keypad_key(4'b0010, 3'b001);
-        repeat(1000) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        
-        // Key '7' (bit[9] -> displays '9')
-        $display("  Key '7' press (bit[9] -> should display '9')");
-        press_keypad_key(4'b0001, 3'b100);
-        repeat(1000) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        
-        // Key '8' (bit[10] -> displays 'A')
-        $display("  Key '8' press (bit[10] -> should display 'A')");
-        press_keypad_key(4'b0001, 3'b010);
-        repeat(1000) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        
-        // Key '9' (bit[11] -> displays 'B')
-        $display("  Key '9' press (bit[11] -> should display 'B')");
-        press_keypad_key(4'b0001, 3'b001);
-        repeat(1000) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        
-        // Key '*' (bit[13] -> displays 'D')
-        $display("  Key '*' press (bit[13] -> should display 'D')");
-        press_keypad_key(4'b1000, 3'b100);
-        repeat(1000) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        
-        // Key '0' (bit[14] -> displays 'E')
-        $display("  Key '0' press (bit[14] -> should display 'E')");
-        press_keypad_key(4'b1000, 3'b010);
-        repeat(1000) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        
-        // Key '#' (bit[15] -> displays 'F')
-        $display("  Key '#' press (bit[15] -> should display 'F')");
-        press_keypad_key(4'b1000, 3'b001);
-        repeat(1000) @(posedge clk);
-        $display("    SEG_DATA: %h at %0t ns", out_to_seg_data, $time);
-        
-        // ----------------------------------------
-        // Test 4: LCD Output Test
-        // ----------------------------------------
-        $display("\n[Test 4] LCD Output Test");
-        repeat(100) @(posedge clk);
-        $display("  LCD_E: %b, LCD_RW: %b, LCD_RS: %b, LCD_DATA: %h", 
-                 lcd_e, lcd_rw, lcd_rs, lcd_data);
-        
-        // ----------------------------------------
-        // Test 5: Additional Operation Observation
-        // ----------------------------------------
-        $display("\n[Test 5] Additional Operation Observation");
-        repeat(1000) @(posedge clk);  // Reduced for faster simulation
+        $display("\n[Test] Random Input Sequence (10 inputs)");
+        test_random_sequence(10);
         
         // ----------------------------------------
         // Test End
@@ -246,26 +112,11 @@ module tb_top;
             $display("[%0t ns] SEG_DATA Change: %h (binary: %b)", $time, out_to_seg_data, out_to_seg_data);
     end
     
-    // Debug: Monitor internal signals with more detail
-    always @(DUT.w_value) begin
-        if (DUT.w_value != 12'h000)
-            $display("[DEBUG %0t ns] Keypad w_value: %h (binary: %b), out_to_keypad: %b, in_from_keypad: %b", 
-                     $time, DUT.w_value, DUT.w_value, out_to_keypad, in_from_keypad);
-    end
-    
-    always @(DUT.w_valid) begin
-        if (DUT.w_valid)
-            $display("[DEBUG %0t ns] Keypad w_valid: %b, w_value: %h, out_to_keypad: %b, in_from_keypad: %b", 
-                     $time, DUT.w_valid, DUT.w_value, out_to_keypad, in_from_keypad);
-    end
-    
-    always @(DUT.w_combined_value) begin
-        if (DUT.w_combined_value != 16'h0000)
-            $display("[DEBUG %0t ns] w_combined_value: %h (binary: %b)", $time, DUT.w_combined_value, DUT.w_combined_value);
-    end
-    
-    always @(DUT.w_combined_valid) begin
-        $display("[DEBUG %0t ns] w_combined_valid: %b", $time, DUT.w_combined_valid);
+    // Monitor input accumulation
+    always @(DUT.input_count) begin
+        if (DUT.input_count > 0)
+            $display("[%0t ns] Input count: %d, Current display: %b", 
+                     $time, DUT.input_count, DUT.current_display);
     end
     
     // Keypad scan output monitoring (commented out to prevent excessive output)
@@ -273,15 +124,57 @@ module tb_top;
     //     $display("[%0t ns] KEYPAD_SCAN: %b", $time, out_to_keypad);
     // end
     
-    // Task: Keypad press synchronized with row scan
-    task press_keypad_key;
+    // Task: Press a button (A/B/C/D) with random hold time
+    task press_button;
+        input [3:0] button_id;  // 0=A, 1=B, 2=C, 3=D
+        input integer hold_time_us;  // Hold time in microseconds
+        integer hold_cycles;
+        begin
+            hold_cycles = hold_time_us * 50;  // Convert us to clock cycles (50MHz)
+            
+            case (button_id)
+                0: begin
+                    $display("  [%0t] Pressing Button A for %0d us", $time, hold_time_us);
+                    btn_a = 1;
+                    repeat(hold_cycles) @(posedge clk);
+                    btn_a = 0;
+                end
+                1: begin
+                    $display("  [%0t] Pressing Button B for %0d us", $time, hold_time_us);
+                    btn_b = 1;
+                    repeat(hold_cycles) @(posedge clk);
+                    btn_b = 0;
+                end
+                2: begin
+                    $display("  [%0t] Pressing Button C for %0d us", $time, hold_time_us);
+                    btn_c = 1;
+                    repeat(hold_cycles) @(posedge clk);
+                    btn_c = 0;
+                end
+                3: begin
+                    $display("  [%0t] Pressing Button D for %0d us", $time, hold_time_us);
+                    btn_d = 1;
+                    repeat(hold_cycles) @(posedge clk);
+                    btn_d = 0;
+                end
+            endcase
+            
+            repeat(1000) @(posedge clk);  // Wait for processing
+        end
+    endtask
+    
+    // Task: Press a keypad key with random hold time
+    task press_keypad_with_duration;
         input [3:0] target_row;
         input [2:0] target_column;
+        input integer hold_time_us;
+        integer hold_cycles;
         integer timeout;
         integer i;
-        integer detected;
         begin
-            $display("    [TASK] Waiting for row %b to press col %b", target_row, target_column);
+            hold_cycles = hold_time_us * 50;  // Convert us to clock cycles
+            $display("  [%0t] Pressing keypad (row=%b, col=%b) for %0d us", 
+                     $time, target_row, target_column, hold_time_us);
             
             // Wait for the target row to be scanned
             timeout = 0;
@@ -291,32 +184,82 @@ module tb_top;
             end
             
             if (timeout < 10000) begin
-                // Hold key for multiple cycles to ensure detection
-                detected = 0;
-                for (i = 0; i < 5000 && detected == 0; i = i + 1) begin
+                // Hold key for specified duration
+                for (i = 0; i < hold_cycles; i = i + 1) begin
                     if (out_to_keypad == target_row)
                         in_from_keypad = target_column;
                     else
                         in_from_keypad = 3'b111;
                     @(posedge clk);
-                    
-                    // Check if detected
-                    if (DUT.w_valid == 1'b1) begin
-                        $display("    [TASK] Detected w_value=%h at row=%b, %0t", 
-                                 DUT.w_value, out_to_keypad, $time);
-                        detected = 1;
-                    end
                 end
-            end else begin
-                $display("    [ERROR] Timeout waiting for row %b", target_row);
             end
             
             // Release key
             in_from_keypad = 3'b111;
+            repeat(1000) @(posedge clk);  // Wait for processing
+        end
+    endtask
+    
+    // Task: Test random input sequence
+    task test_random_sequence;
+        input integer num_inputs;
+        integer i, input_type, hold_time;
+        integer row, col;
+        begin
+            $display("\n  Generating %0d random inputs...", num_inputs);
             
-            // Wait for valid to clear
-            wait(DUT.w_valid == 1'b0);
-            repeat(100) @(posedge clk);
+            for (i = 0; i < num_inputs; i = i + 1) begin
+                // Random input type (0-15 for 16 possible inputs)
+                input_type = $urandom % 16;
+                // Random hold time between 100us to 1100us (realistic button press)
+                hold_time = 100 + ($urandom % 1000);
+                
+                $display("\n  Input #%0d: Type=%0d", i+1, input_type);
+                
+                // Determine which button/key to press
+                case (input_type)
+                    0:  press_button(0, hold_time);  // Button A
+                    1:  press_keypad_with_duration(4'b0100, 3'b100, hold_time);  // Key 1
+                    2:  press_keypad_with_duration(4'b0100, 3'b010, hold_time);  // Key 2
+                    3:  press_keypad_with_duration(4'b0100, 3'b001, hold_time);  // Key 3
+                    4:  press_button(1, hold_time);  // Button B
+                    5:  press_keypad_with_duration(4'b0010, 3'b100, hold_time);  // Key 4
+                    6:  press_keypad_with_duration(4'b0010, 3'b010, hold_time);  // Key 5
+                    7:  press_keypad_with_duration(4'b0010, 3'b001, hold_time);  // Key 6
+                    8:  press_button(2, hold_time);  // Button C
+                    9:  press_keypad_with_duration(4'b0001, 3'b100, hold_time);  // Key 7
+                    10: press_keypad_with_duration(4'b0001, 3'b010, hold_time);  // Key 8
+                    11: press_keypad_with_duration(4'b0001, 3'b001, hold_time);  // Key 9
+                    12: press_button(3, hold_time);  // Button D
+                    13: press_keypad_with_duration(4'b1000, 3'b100, hold_time);  // Key *
+                    14: press_keypad_with_duration(4'b1000, 3'b010, hold_time);  // Key 0
+                    15: press_keypad_with_duration(4'b1000, 3'b001, hold_time);  // Key #
+                endcase
+            end
+            
+            // Display final buffer contents
+            $display("\n\n=== Final Input Buffer ===");
+            $display("  Total inputs captured: %0d", DUT.input_count);
+            $display("\n  Individual 16-bit values:");
+            for (i = 0; i < DUT.input_count; i = i + 1) begin
+                $display("    Buffer[%2d]: %b (hex: %04h, dec: %0d)", 
+                         i, DUT.input_buffer[i], DUT.input_buffer[i], DUT.input_buffer[i]);
+            end
+            
+            // Press submit button
+            $display("\n  Pressing SUBMIT button...");
+            btn_submit = 1;
+            repeat(10000) @(posedge clk);  // 200us - wait for combination logic
+            
+            // Display combined flags stored in DUT (AFTER submit)
+            $display("\n  Combined 16-bit flags (stored in top.v):");
+            $display("    %b (hex: %04h)", DUT.combined_input_flags, DUT.combined_input_flags);
+            $display("    bit[15:0] = [#,0,*,D,9,8,7,C,6,5,4,B,3,2,1,A]");
+            
+            btn_submit = 0;
+            repeat(5000) @(posedge clk);
+            
+            $display("\n  After submit released - Input count: %d", DUT.input_count);
         end
     endtask
 
