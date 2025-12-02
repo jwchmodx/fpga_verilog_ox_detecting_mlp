@@ -9,7 +9,7 @@
 module sigmoid_fixed #(
     parameter W      = 8,   // 확률 출력 비트폭
     parameter FRAC   = 6,   // QFRAC (1.0 = 1<<FRAC)
-    parameter SHIFT  = 9,   // 입력 스코어 스케일링: z_scaled = z >>> SHIFT
+    parameter SHIFT  = 10,   // 입력 스코어 스케일링: z_scaled = z >>> SHIFT
     parameter CLIP_X = 4    // 선형 구간 [-CLIP_X, +CLIP_X]
 )(
     input  signed [W+4:0] z,    // y_score (mlp_output_score에서 나오는 raw score)

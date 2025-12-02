@@ -120,6 +120,14 @@ module tb_top;
         test_predefined_patterns(1'b1);  // 1 = after training
         
         // ----------------------------------------
+        // Real Input Test (Simulating actual button presses)
+        // ----------------------------------------
+        $display("\n========================================");
+        $display("  Test 4: Real Input Simulation");
+        $display("========================================");
+        test_real_input();
+        
+        // ----------------------------------------
         // Test End & Summary
         // ----------------------------------------
         $display("\n\n");
@@ -340,6 +348,171 @@ module tb_top;
             btn_submit = 0;
             release DUT.INPUT_MGR.combined_input_flags;
             repeat(50) @(posedge clk);  // Reduced wait time
+        end
+    endtask
+    
+    // Task: Test with real input simulation (actual button presses)
+    task test_real_input;
+        reg [15:0] test_pattern;
+        integer i;
+        reg result;
+        begin
+            // Select a test pattern from test set (e.g., test_O[0])
+            test_pattern = 16'b0111110110011111;  // test_O[0]
+            
+            $display("\nTesting with REAL button presses:");
+            $display("  Pattern: %04h (binary: %b)", test_pattern, test_pattern);
+            $display("  Expected: O\n");
+            
+            // Simulate button presses for each bit that is set
+            $display("  Simulating button presses...");
+            for (i = 0; i < 16; i = i + 1) begin
+                if (test_pattern[i]) begin
+                    press_input_bit(i);
+                end
+            end
+            
+            $display("\n  All inputs registered. Input count: %0d", DUT.INPUT_MGR.input_count);
+            $display("  Input buffer combined flags: %04h", DUT.INPUT_MGR.combined_input_flags);
+            
+            // Press submit button
+            $display("\n  Pressing SUBMIT button...");
+            btn_submit = 1;
+            repeat(10000) @(posedge clk);  // Wait for NN processing
+            
+            // Capture result
+            result = DUT.nn_y;
+            
+            // Display results
+            $display("\n  ========================================");
+            $display("  Result: %s", result ? "O" : "X");
+            $display("  Probability: %0d%%", DUT.nn_o_prob_pct);
+            $display("  Expected: O");
+            $display("  Status: %s", result == 1'b1 ? "CORRECT!" : "INCORRECT");
+            $display("  ========================================\n");
+            
+            btn_submit = 0;
+            repeat(5000) @(posedge clk);
+        end
+    endtask
+    
+    // Task: Press a single input (button or keypad) based on bit position
+    task press_input_bit;
+        input integer bit_pos;
+        integer hold_time;
+        begin
+            hold_time = 200;  // 200us hold time
+            
+            case (bit_pos)
+                0:  begin  // btn_a
+                    $display("    [%0d] Pressing Button A", bit_pos);
+                    btn_a = 1;
+                    repeat(hold_time * 50) @(posedge clk);
+                    btn_a = 0;
+                end
+                1:  begin  // keypad 1
+                    $display("    [%0d] Pressing Keypad 1", bit_pos);
+                    press_keypad_with_duration(4'b0100, 3'b100, hold_time);
+                end
+                2:  begin  // keypad 2
+                    $display("    [%0d] Pressing Keypad 2", bit_pos);
+                    press_keypad_with_duration(4'b0100, 3'b010, hold_time);
+                end
+                3:  begin  // keypad 3
+                    $display("    [%0d] Pressing Keypad 3", bit_pos);
+                    press_keypad_with_duration(4'b0100, 3'b001, hold_time);
+                end
+                4:  begin  // btn_b
+                    $display("    [%0d] Pressing Button B", bit_pos);
+                    btn_b = 1;
+                    repeat(hold_time * 50) @(posedge clk);
+                    btn_b = 0;
+                end
+                5:  begin  // keypad 4
+                    $display("    [%0d] Pressing Keypad 4", bit_pos);
+                    press_keypad_with_duration(4'b0010, 3'b100, hold_time);
+                end
+                6:  begin  // keypad 5
+                    $display("    [%0d] Pressing Keypad 5", bit_pos);
+                    press_keypad_with_duration(4'b0010, 3'b010, hold_time);
+                end
+                7:  begin  // keypad 6
+                    $display("    [%0d] Pressing Keypad 6", bit_pos);
+                    press_keypad_with_duration(4'b0010, 3'b001, hold_time);
+                end
+                8:  begin  // btn_c
+                    $display("    [%0d] Pressing Button C", bit_pos);
+                    btn_c = 1;
+                    repeat(hold_time * 50) @(posedge clk);
+                    btn_c = 0;
+                end
+                9:  begin  // keypad 7
+                    $display("    [%0d] Pressing Keypad 7", bit_pos);
+                    press_keypad_with_duration(4'b0001, 3'b100, hold_time);
+                end
+                10: begin  // keypad 8
+                    $display("    [%0d] Pressing Keypad 8", bit_pos);
+                    press_keypad_with_duration(4'b0001, 3'b010, hold_time);
+                end
+                11: begin  // keypad 9
+                    $display("    [%0d] Pressing Keypad 9", bit_pos);
+                    press_keypad_with_duration(4'b0001, 3'b001, hold_time);
+                end
+                12: begin  // btn_d
+                    $display("    [%0d] Pressing Button D", bit_pos);
+                    btn_d = 1;
+                    repeat(hold_time * 50) @(posedge clk);
+                    btn_d = 0;
+                end
+                13: begin  // keypad *
+                    $display("    [%0d] Pressing Keypad *", bit_pos);
+                    press_keypad_with_duration(4'b1000, 3'b100, hold_time);
+                end
+                14: begin  // keypad 0
+                    $display("    [%0d] Pressing Keypad 0", bit_pos);
+                    press_keypad_with_duration(4'b1000, 3'b010, hold_time);
+                end
+                15: begin  // keypad #
+                    $display("    [%0d] Pressing Keypad #", bit_pos);
+                    press_keypad_with_duration(4'b1000, 3'b001, hold_time);
+                end
+            endcase
+            
+            repeat(1000) @(posedge clk);  // Wait for processing
+        end
+    endtask
+    
+    // Task: Press a keypad key with specified duration
+    task press_keypad_with_duration;
+        input [3:0] target_row;
+        input [2:0] target_column;
+        input integer hold_time_us;
+        integer hold_cycles;
+        integer timeout;
+        integer i;
+        begin
+            hold_cycles = hold_time_us * 50;  // Convert us to clock cycles
+            
+            // Wait for the target row to be scanned
+            timeout = 0;
+            while (out_to_keypad != target_row && timeout < 10000) begin
+                @(posedge clk);
+                timeout = timeout + 1;
+            end
+            
+            if (timeout < 10000) begin
+                // Hold key for specified duration
+                for (i = 0; i < hold_cycles; i = i + 1) begin
+                    if (out_to_keypad == target_row)
+                        in_from_keypad = target_column;
+                    else
+                        in_from_keypad = 3'b111;
+                    @(posedge clk);
+                end
+            end
+            
+            // Release key
+            in_from_keypad = 3'b111;
         end
     endtask
 
