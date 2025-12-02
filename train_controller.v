@@ -7,7 +7,7 @@
 //   - 7-segment에 epoch 표시
 //====================================================
 module train_controller #(
-    parameter NUM_EPOCHS = 10,
+    parameter NUM_EPOCHS = 20,
     parameter NUM_TRAIN_O = 100,
     parameter NUM_TRAIN_X = 100
 )(

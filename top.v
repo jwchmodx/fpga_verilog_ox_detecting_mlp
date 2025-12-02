@@ -115,7 +115,7 @@ module top (
     
     // Training Controller - manages training data and process
     train_controller #(
-        .NUM_EPOCHS(10),
+        .NUM_EPOCHS(20),
         .NUM_TRAIN_O(100),
         .NUM_TRAIN_X(100)
     ) TRAIN_CTRL (
@@ -173,7 +173,16 @@ module top (
     // 7-segment display multiplexer
     wire [15:0] seg_display_data;
     wire seg_display_valid;
+    wire seg_number_mode;    // 0: one-hot mode, 1: number display mode
     reg [15:0] epoch_display;
+    wire [7:0] prob_tens;    // Probability tens digit (0-10)
+    wire [7:0] prob_ones;    // Probability ones digit (0-9)
+    wire [15:0] prob_display; // Probability in BCD format
+    
+    // Convert probability to tens and ones digits
+    assign prob_tens = nn_o_prob_pct / 10;
+    assign prob_ones = nn_o_prob_pct % 10;
+    assign prob_display = {8'b0, prob_tens[3:0], prob_ones[3:0]};
     
     // Convert epoch number to one-hot for display
     // Display rightmost digit of epoch number (0-9)
@@ -193,10 +202,15 @@ module top (
         endcase
     end
     
-    // Training mode: display epoch number
-    // Inference mode: display current input
-    assign seg_display_data = training_active ? epoch_display : current_display;
-    assign seg_display_valid = training_active ? 1'b1 : display_valid;
+    // Display mode selector
+    // Training mode: display epoch number (one-hot mode)
+    // NN result mode: display probability (number mode, 2 digits)
+    // Inference mode: display current input (one-hot mode)
+    assign seg_display_data = training_active ? epoch_display : 
+                              (nn_result_valid ? prob_display : current_display);
+    assign seg_display_valid = training_active ? 1'b1 : 
+                                (nn_result_valid ? 1'b1 : display_valid);
+    assign seg_number_mode = nn_result_valid ? 1'b1 : 1'b0;
 
     // OUT - Display on 7-segment
     display_seg DP_SEG (
@@ -204,6 +218,7 @@ module top (
         .rst(rst),
         .scan_data(seg_display_data),
         .valid(seg_display_valid),
+        .number_mode(seg_number_mode),
         .r7(w_r[7]), .r6(w_r[6]), .r5(w_r[5]), .r4(w_r[4]),
         .r3(w_r[3]), .r2(w_r[2]), .r1(w_r[1]), .r0(w_r[0])
     );

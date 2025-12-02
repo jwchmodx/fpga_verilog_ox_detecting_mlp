@@ -34,28 +34,28 @@ module mlp_update #(
         if (!rst_n) begin
             b_o <= 0;
             for (i = 0; i < N; i = i + 1) begin
-                w_o[i] <= $random % 32;   // 간단한 초기화 (0~31)
+                w_o[i] <= ($random % 128) - 64;   // 초기화: -64 ~ +63 (-1.0 ~ +1.0)
                 b_h[i] <= 0;
                 for (j = 0; j < 16; j = j + 1)
-                    w_h[i][j] <= $random % 32;
+                    w_h[i][j] <= ($random % 128) - 64;  // 초기화: -64 ~ +63
             end
         end else if (learn) begin
             for (i = 0; i < N; i = i + 1) begin
                 h_val   = h_act_bus[i*HRAW_W +: HRAW_W];
 
-                // 출력층 업데이트 (아주 단순화된 규칙)
-                delta_o = ((err * (h_val > 0)) >>> FRAC);
+                // 출력층 업데이트 (학습률 증가: FRAC-2)
+                delta_o = ((err * (h_val > 0)) >>> (FRAC-2));  // 4배 더 큰 학습률
                 w_o[i]  <= w_o[i] + delta_o;
 
-                // hidden bias 업데이트 (역전파의 단순화 버전)
-                b_h[i]  <= b_h[i] + ((err * w_o[i]) >>> FRAC);
+                // hidden bias 업데이트 (학습률 증가)
+                b_h[i]  <= b_h[i] + ((err * w_o[i]) >>> (FRAC-2));
 
-                // 입력-히든 가중치 업데이트
+                // 입력-히든 가중치 업데이트 (학습률 증가)
                 for (j = 0; j < 16; j = j + 1)
                     w_h[i][j] <= w_h[i][j]
-                               + ((err * w_o[i] * (x[j] ? 1 : -1)) >>> (2*FRAC));
+                               + ((err * w_o[i] * (x[j] ? 1 : -1)) >>> (2*FRAC-3));
             end
-            b_o <= b_o + err;
+            b_o <= b_o + (err >>> 1);  // 출력 bias도 학습률 증가
         end
     end
 
