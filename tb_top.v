@@ -81,10 +81,10 @@ module tb_top;
         $display("========================================");
         
         // ----------------------------------------
-        // Random Input Sequence Test
+        // Neural Network Test with Predefined Data
         // ----------------------------------------
-        $display("\n[Test] Random Input Sequence (10 inputs)");
-        test_random_sequence(10);
+        $display("\n[Test] Neural Network O/X Classification");
+        test_predefined_patterns();
         
         // ----------------------------------------
         // Test End
@@ -101,9 +101,14 @@ module tb_top;
     // Monitoring (Main Signal Change Detection)
     // =========================================
     
-    // LED change monitoring
+    // LED change monitoring (with neural network result interpretation)
     always @(out_to_led) begin
-        $display("[%0t ns] LED Change: %b", $time, out_to_led);
+        if (DUT.nn_result_valid) begin
+            $display("[%0t ns] LED Change (NN Result): %b [LED[7]=%s, Confidence=%0d%%]", 
+                     $time, out_to_led, out_to_led[7] ? "O" : "X", DUT.nn_o_prob_pct);
+        end else begin
+            $display("[%0t ns] LED Change: %b", $time, out_to_led);
+        end
     end
     
     // 7-segment data change monitoring (more detailed)
@@ -124,142 +129,90 @@ module tb_top;
     //     $display("[%0t ns] KEYPAD_SCAN: %b", $time, out_to_keypad);
     // end
     
-    // Task: Press a button (A/B/C/D) with random hold time
-    task press_button;
-        input [3:0] button_id;  // 0=A, 1=B, 2=C, 3=D
-        input integer hold_time_us;  // Hold time in microseconds
-        integer hold_cycles;
-        begin
-            hold_cycles = hold_time_us * 50;  // Convert us to clock cycles (50MHz)
-            
-            case (button_id)
-                0: begin
-                    $display("  [%0t] Pressing Button A for %0d us", $time, hold_time_us);
-                    btn_a = 1;
-                    repeat(hold_cycles) @(posedge clk);
-                    btn_a = 0;
-                end
-                1: begin
-                    $display("  [%0t] Pressing Button B for %0d us", $time, hold_time_us);
-                    btn_b = 1;
-                    repeat(hold_cycles) @(posedge clk);
-                    btn_b = 0;
-                end
-                2: begin
-                    $display("  [%0t] Pressing Button C for %0d us", $time, hold_time_us);
-                    btn_c = 1;
-                    repeat(hold_cycles) @(posedge clk);
-                    btn_c = 0;
-                end
-                3: begin
-                    $display("  [%0t] Pressing Button D for %0d us", $time, hold_time_us);
-                    btn_d = 1;
-                    repeat(hold_cycles) @(posedge clk);
-                    btn_d = 0;
-                end
-            endcase
-            
-            repeat(1000) @(posedge clk);  // Wait for processing
-        end
-    endtask
-    
-    // Task: Press a keypad key with random hold time
-    task press_keypad_with_duration;
-        input [3:0] target_row;
-        input [2:0] target_column;
-        input integer hold_time_us;
-        integer hold_cycles;
-        integer timeout;
+    // Task: Test with predefined O and X patterns
+    task test_predefined_patterns;
         integer i;
+        integer correct_O, correct_X, total_correct;
+        reg [15:0] test_O [0:9];
+        reg [15:0] test_X [0:9];
         begin
-            hold_cycles = hold_time_us * 50;  // Convert us to clock cycles
-            $display("  [%0t] Pressing keypad (row=%b, col=%b) for %0d us", 
-                     $time, target_row, target_column, hold_time_us);
+            // Initialize test data (from tb_ox_mlp.v)
+            test_O[0] = 16'b0111110110011111;
+            test_O[1] = 16'b1111100110010111;
+            test_O[2] = 16'b1111100010011111;
+            test_O[3] = 16'b1111100110010101;
+            test_O[4] = 16'b1111000110001111;
+            test_O[5] = 16'b0111100110001111;
+            test_O[6] = 16'b1111100110010010;
+            test_O[7] = 16'b0111000110011111;
+            test_O[8] = 16'b1101100110010111;
+            test_O[9] = 16'b1111100010011101;
             
-            // Wait for the target row to be scanned
-            timeout = 0;
-            while (out_to_keypad != target_row && timeout < 10000) begin
-                @(posedge clk);
-                timeout = timeout + 1;
+            test_X[0] = 16'b1001011001101101;
+            test_X[1] = 16'b1001010000101001;
+            test_X[2] = 16'b0001011001001001;
+            test_X[3] = 16'b1001011000101000;
+            test_X[4] = 16'b1001011001100001;
+            test_X[5] = 16'b1001011001111001;
+            test_X[6] = 16'b0101011001101010;
+            test_X[7] = 16'b1001001000101101;
+            test_X[8] = 16'b0001010000101001;
+            test_X[9] = 16'b1001011101101001;
+            
+            correct_O = 0;
+            correct_X = 0;
+            
+            $display("\n=== Testing O Patterns (Expected: O) ===");
+            for (i = 0; i < 10; i = i + 1) begin
+                $display("\n[Test O #%0d]", i+1);
+                test_single_pattern(test_O[i], 1'b1);  // 1=O is expected
+                if (DUT.nn_y == 1'b1) correct_O = correct_O + 1;
             end
             
-            if (timeout < 10000) begin
-                // Hold key for specified duration
-                for (i = 0; i < hold_cycles; i = i + 1) begin
-                    if (out_to_keypad == target_row)
-                        in_from_keypad = target_column;
-                    else
-                        in_from_keypad = 3'b111;
-                    @(posedge clk);
-                end
+            $display("\n\n=== Testing X Patterns (Expected: X) ===");
+            for (i = 0; i < 10; i = i + 1) begin
+                $display("\n[Test X #%0d]", i+1);
+                test_single_pattern(test_X[i], 1'b0);  // 0=X is expected
+                if (DUT.nn_y == 1'b0) correct_X = correct_X + 1;
             end
             
-            // Release key
-            in_from_keypad = 3'b111;
-            repeat(1000) @(posedge clk);  // Wait for processing
+            // Display accuracy
+            total_correct = correct_O + correct_X;
+            $display("\n\n========================================");
+            $display("=== Classification Results ===");
+            $display("========================================");
+            $display("  O patterns: %0d/10 correct (%.1f%%)", correct_O, correct_O * 10.0);
+            $display("  X patterns: %0d/10 correct (%.1f%%)", correct_X, correct_X * 10.0);
+            $display("  Total: %0d/20 correct (%.1f%%)", total_correct, total_correct * 5.0);
+            $display("========================================");
         end
     endtask
     
-    // Task: Test random input sequence
-    task test_random_sequence;
-        input integer num_inputs;
-        integer i, input_type, hold_time;
-        integer row, col;
+    // Task: Test single pattern
+    task test_single_pattern;
+        input [15:0] pattern;
+        input expected_O;  // 1 if expecting O, 0 if expecting X
         begin
-            $display("\n  Generating %0d random inputs...", num_inputs);
+            $display("  Pattern: %b (hex: %04h)", pattern, pattern);
+            $display("  Expected: %s", expected_O ? "O" : "X");
             
-            for (i = 0; i < num_inputs; i = i + 1) begin
-                // Random input type (0-15 for 16 possible inputs)
-                input_type = $urandom % 16;
-                // Random hold time between 100us to 1100us (realistic button press)
-                hold_time = 100 + ($urandom % 1000);
-                
-                $display("\n  Input #%0d: Type=%0d", i+1, input_type);
-                
-                // Determine which button/key to press
-                case (input_type)
-                    0:  press_button(0, hold_time);  // Button A
-                    1:  press_keypad_with_duration(4'b0100, 3'b100, hold_time);  // Key 1
-                    2:  press_keypad_with_duration(4'b0100, 3'b010, hold_time);  // Key 2
-                    3:  press_keypad_with_duration(4'b0100, 3'b001, hold_time);  // Key 3
-                    4:  press_button(1, hold_time);  // Button B
-                    5:  press_keypad_with_duration(4'b0010, 3'b100, hold_time);  // Key 4
-                    6:  press_keypad_with_duration(4'b0010, 3'b010, hold_time);  // Key 5
-                    7:  press_keypad_with_duration(4'b0010, 3'b001, hold_time);  // Key 6
-                    8:  press_button(2, hold_time);  // Button C
-                    9:  press_keypad_with_duration(4'b0001, 3'b100, hold_time);  // Key 7
-                    10: press_keypad_with_duration(4'b0001, 3'b010, hold_time);  // Key 8
-                    11: press_keypad_with_duration(4'b0001, 3'b001, hold_time);  // Key 9
-                    12: press_button(3, hold_time);  // Button D
-                    13: press_keypad_with_duration(4'b1000, 3'b100, hold_time);  // Key *
-                    14: press_keypad_with_duration(4'b1000, 3'b010, hold_time);  // Key 0
-                    15: press_keypad_with_duration(4'b1000, 3'b001, hold_time);  // Key #
-                endcase
-            end
+            // Directly inject pattern into input_manager's combined_input_flags
+            force DUT.INPUT_MGR.combined_input_flags = pattern;
             
-            // Display final buffer contents
-            $display("\n\n=== Final Input Buffer ===");
-            $display("  Total inputs captured: %0d", DUT.INPUT_MGR.input_count);
-            $display("\n  Individual 16-bit values:");
-            for (i = 0; i < DUT.INPUT_MGR.input_count; i = i + 1) begin
-                $display("    Buffer[%2d]: %b (hex: %04h, dec: %0d)", 
-                         i, DUT.INPUT_MGR.input_buffer[i], DUT.INPUT_MGR.input_buffer[i], DUT.INPUT_MGR.input_buffer[i]);
-            end
-            
-            // Press submit button
-            $display("\n  Pressing SUBMIT button...");
+            // Trigger neural network computation
             btn_submit = 1;
-            repeat(10000) @(posedge clk);  // 200us - wait for combination logic
+            repeat(100) @(posedge clk);
             
-            // Display combined flags stored in INPUT_MGR (AFTER submit)
-            $display("\n  Combined 16-bit flags (stored in input_manager):");
-            $display("    %b (hex: %04h)", DUT.INPUT_MGR.combined_input_flags, DUT.INPUT_MGR.combined_input_flags);
-            $display("    bit[15:0] = [#,0,*,D,9,8,7,C,6,5,4,B,3,2,1,A]");
+            // Display results
+            $display("  Result: %s (Probability: %0d%%)", DUT.nn_y ? "O" : "X", DUT.nn_o_prob_pct);
+            $display("  Correct: %s", (DUT.nn_y == expected_O) ? "YES ✓" : "NO ✗");
+            $display("  LED: %b [bit7=%s, confidence=%0d%%]", 
+                     DUT.out_to_led, DUT.out_to_led[7] ? "O" : "X", DUT.nn_o_prob_pct);
             
+            // Release submit and force
             btn_submit = 0;
-            repeat(5000) @(posedge clk);
-            
-            $display("\n  After submit released - Input count: %d", DUT.INPUT_MGR.input_count);
+            release DUT.INPUT_MGR.combined_input_flags;
+            repeat(100) @(posedge clk);
         end
     endtask
 
