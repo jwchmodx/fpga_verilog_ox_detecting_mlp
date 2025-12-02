@@ -1,7 +1,14 @@
+`timescale 1ns/1ps
+
+
 module top (
     input  clk, // Calibrated for 50MHz
     input  rst,
     input  [2:0] in_from_keypad,
+    input  btn_a,  // Extra button A
+    input  btn_b,  // Extra button B
+    input  btn_c,  // Extra button C
+    input  btn_d,  // Extra button D
     output [3:0] out_to_keypad,
     output reg [7:0] out_to_led,
     output [7:0] out_to_seg_data,
@@ -14,18 +21,54 @@ module top (
 
     wire w_valid;
     wire [11:0] w_value;
+    wire [15:0] w_combined_value;  // Combined keypad (shifted) + buttons
+    wire w_combined_valid;         // Valid signal for buttons or keypad
     wire [7:0] w_r [7:0];
     integer cnt_led;
+    
+    // Button edge detection
+    reg btn_a_prev, btn_b_prev, btn_c_prev, btn_d_prev;
+    wire btn_changed;
 
     // IN
     keypad_scan KS (.clk(clk), .rst(rst), .in_from_keypad(in_from_keypad), // input
                     .out_to_keypad(out_to_keypad), .out(w_value), .valid(w_valid)); // output
 
+    // Combine keypad and buttons in specific order: A,1,2,3,B,4,5,6,C,7,8,9,D,*,0,#
+    // bit[0]:A, bit[1]:1, bit[2]:2, bit[3]:3, bit[4]:B, bit[5]:4, bit[6]:5, bit[7]:6
+    // bit[8]:C, bit[9]:7, bit[10]:8, bit[11]:9, bit[12]:D, bit[13]:*, bit[14]:0, bit[15]:#
+    // Adjusted mapping: keypad scan has 1-clock delay, so shift by 3 positions
+    assign w_combined_value = {w_value[2], w_value[1], w_value[0], btn_d,     // #, 0, *, D
+                               w_value[11], w_value[10], w_value[9], btn_c,    // 9, 8, 7, C
+                               w_value[8], w_value[7], w_value[6], btn_b,      // 6, 5, 4, B
+                               w_value[5], w_value[4], w_value[3], btn_a};     // 3, 2, 1, A
+    
+    // Button change detection
+    always @(posedge clk or negedge rst) begin
+        if (~rst) begin
+            btn_a_prev <= 0;
+            btn_b_prev <= 0;
+            btn_c_prev <= 0;
+            btn_d_prev <= 0;
+        end else begin
+            btn_a_prev <= btn_a;
+            btn_b_prev <= btn_b;
+            btn_c_prev <= btn_c;
+            btn_d_prev <= btn_d;
+        end
+    end
+    
+    assign btn_changed = (btn_a != btn_a_prev) || (btn_b != btn_b_prev) || 
+                        (btn_c != btn_c_prev) || (btn_d != btn_d_prev);
+    
+    // Combined valid: keypad valid OR button changed OR any button pressed
+    assign w_combined_valid = w_valid || btn_changed || btn_a || btn_b || btn_c || btn_d;
+
     // TO-DO
     // Design your logics here
 
-    // OUT
-    display_seg DP_SEG (.clk(clk), .rst(rst), .scan_data(w_value), .valid(w_valid), // input
+    // OUT - Use combined value for display
+    display_seg DP_SEG (.clk(clk), .rst(rst), .scan_data(w_combined_value), .valid(w_combined_valid), // input
                         .r7(w_r[7]), .r6(w_r[6]), .r5(w_r[5]), .r4(w_r[4]), // output
                         .r3(w_r[3]), .r2(w_r[2]), .r1(w_r[1]), .r0(w_r[0]));
 

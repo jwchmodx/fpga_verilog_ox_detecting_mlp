@@ -1,7 +1,9 @@
+`timescale 1ns/1ps
+
 module display_seg (
   input  clk,
   input  rst,
-  input  [11:0] scan_data,
+  input  [15:0] scan_data,  // 16 bits: keypad[15:4] + buttons[3:0]
   input  valid,
   output reg [7:0] r7,
   output reg [7:0] r6,
@@ -13,45 +15,41 @@ module display_seg (
   output reg [7:0] r0
 );
 
-  reg [11:0] stored_data;
+  reg [15:0] stored_data;  // 16 bits
   reg [7:0]  r;
-  reg [2:0]  digit; 
   
   always@(posedge clk or negedge rst) begin
     if (~rst) begin
       r0 = 8'b0; r1 = 8'b0; r2 = 8'b0; r3 = 8'b0;
       r4 = 8'b0; r5 = 8'b0; r6 = 8'b0; r7 = 8'b0;
-      stored_data = 12'b000000000000;
-      digit       = 3'b000;
+      stored_data = 16'b0000000000000000;
       r           = 8'b0;
     end else begin
       if (valid) stored_data = scan_data;
-      // TO-DO start
+      // TO-DO start - Display: A,1,2,3,B,4,5,6,C,7,8,9,D,*,0,# -> 0~F
       case(stored_data)
-        12'b000000000001 : r = 8'b01100000; // 1
-        12'b000000000010 : r = 8'b11011010; // 2
-        12'b000000000100 : r = 8'b11110010; // 3
-        12'b000000001000 : r = 8'b01100110; // 4
-        12'b000000010000 : r = 8'b10110110; // 5
-        12'b000000100000 : r = 8'b10111110; // 6
-        12'b000001000000 : r = 8'b11100000; // 7
-        12'b000010000000 : r = 8'b11111110; // 8
-        12'b000100000000 : r = 8'b11110110; // 9
-        12'b010000000000 : r = 8'b11111100; // 0
-        12'b001000000000 : r = 8'b01101110; // * -> X
-        12'b100000000000 : r = 8'b01101110; // # -> X
+        16'b0000000000000001 : r = 8'b11111100; // 0: A (bit[0])
+        16'b0000000000000010 : r = 8'b01100000; // 1: 1 (bit[1])
+        16'b0000000000000100 : r = 8'b11011010; // 2: 2 (bit[2])
+        16'b0000000000001000 : r = 8'b11110010; // 3: 3 (bit[3])
+        16'b0000000000010000 : r = 8'b01100110; // 4: B (bit[4])
+        16'b0000000000100000 : r = 8'b10110110; // 5: 4 (bit[5])
+        16'b0000000001000000 : r = 8'b10111110; // 6: 5 (bit[6])
+        16'b0000000010000000 : r = 8'b11100000; // 7: 6 (bit[7])
+        16'b0000000100000000 : r = 8'b11111110; // 8: C (bit[8])
+        16'b0000001000000000 : r = 8'b11110110; // 9: 7 (bit[9])
+        16'b0000010000000000 : r = 8'b11101110; // A: 8 (bit[10])
+        16'b0000100000000000 : r = 8'b00111110; // B: 9 (bit[11])
+        16'b0001000000000000 : r = 8'b10011100; // C: D (bit[12])
+        16'b0010000000000000 : r = 8'b01111010; // D: * (bit[13])
+        16'b0100000000000000 : r = 8'b10011110; // E: 0 (bit[14])
+        16'b1000000000000000 : r = 8'b10001110; // F: # (bit[15])
+        default              : r = 8'b00000000;
       endcase
-      case (digit)
-        3'b000 : begin r7 = 8'b0; r6 = 8'b0; r5 = 8'b0; r4 = 8'b0; r3 = 8'b0; r2 = 8'b0; r1 = 8'b0; r0 = r;    end
-        3'b001 : begin r7 = 8'b0; r6 = 8'b0; r5 = 8'b0; r4 = 8'b0; r3 = 8'b0; r2 = 8'b0; r1 = r;    r0 = 8'b0; end
-        3'b010 : begin r7 = 8'b0; r6 = 8'b0; r5 = 8'b0; r4 = 8'b0; r3 = 8'b0; r2 = r;    r1 = 8'b0; r0 = 8'b0; end
-        3'b011 : begin r7 = 8'b0; r6 = 8'b0; r5 = 8'b0; r4 = 8'b0; r3 = r;    r2 = 8'b0; r1 = 8'b0; r0 = 8'b0; end
-        3'b100 : begin r7 = 8'b0; r6 = 8'b0; r5 = 8'b0; r4 = r;    r3 = 8'b0; r2 = 8'b0; r1 = 8'b0; r0 = 8'b0; end
-        3'b101 : begin r7 = 8'b0; r6 = 8'b0; r5 = r;    r4 = 8'b0; r3 = 8'b0; r2 = 8'b0; r1 = 8'b0; r0 = 8'b0; end
-        3'b110 : begin r7 = 8'b0; r6 = r;    r5 = 8'b0; r4 = 8'b0; r3 = 8'b0; r2 = 8'b0; r1 = 8'b0; r0 = 8'b0; end
-        3'b111 : begin r7 = r;    r6 = 8'b0; r5 = 8'b0; r4 = 8'b0; r3 = 8'b0; r2 = 8'b0; r1 = 8'b0; r0 = 8'b0; end
-        default: begin r7 = 8'b0; r6 = 8'b0; r5 = 8'b0; r4 = 8'b0; r3 = 8'b0; r2 = 8'b0; r1 = 8'b0; r0 = 8'b0; end
-      endcase
+      
+      // Display same value on all digits (for one-hot encoded single key display)
+      r0 = r; r1 = r; r2 = r; r3 = r;
+      r4 = r; r5 = r; r6 = r; r7 = r;
       // TO-DO end
     end
   end

@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module text_lcd # (
    parameter DELAY      = 3'b000,
    parameter FUNC_SET   = 3'b001,
