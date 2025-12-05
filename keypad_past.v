@@ -115,13 +115,13 @@ module top (
     
     // Training Controller - manages training data and process
     train_controller #(
-        .NUM_EPOCHS(10),  // 에폭 수: 10
+        .NUM_EPOCHS(20),
         .NUM_TRAIN_O(100),
         .NUM_TRAIN_X(100)
     ) TRAIN_CTRL (
         .clk(clk),
-        .rst(rst),
-        .btn_train(btn_train),  
+        .rst_n(rst),
+        .btn_train(btn_train),
         .train_x(train_x),
         .train_learn(train_learn),
         .train_is_O(train_is_O),
@@ -139,7 +139,7 @@ module top (
     // Neural Network - O vs X classifier
     mlp_OX #(
         .W(8),      // 8-bit weights
-        .N(12),     // 히든 뉴런 수 증가: 8 -> 12 (학습 능력 향상)
+        .N(8),      // 8 hidden neurons
         .FRAC(6)    // 6 fractional bits
     ) NN_OX (
         .clk(clk),
@@ -174,12 +174,11 @@ module top (
     wire [15:0] seg_display_data;
     wire seg_display_valid;
     wire seg_number_mode;    // 0: one-hot mode, 1: number display mode
-    wire [15:0] epoch_display;  // Changed from reg to wire
+    reg [15:0] epoch_display;
     wire [7:0] prob_tens;    // Probability tens digit (0-10)
     wire [7:0] prob_ones;    // Probability ones digit (0-9)
     wire [15:0] prob_display; // Probability in BCD format
     wire [15:0] done_display; // "99" for training complete
-    wire [15:0] keypad_display; // 키패드 입력 숫자 표시
     
     // Convert probability to tens and ones digits
     assign prob_tens = nn_o_prob_pct / 10;
@@ -195,48 +194,18 @@ module top (
     wire [3:0] epoch_ones = current_epoch % 10;   // 1의 자리 (0-9)
     assign epoch_display = {8'b0, epoch_tens[3:0], epoch_ones[3:0]};  // BCD format
     
-    // 키패드 및 버튼 입력을 숫자로 변환 (0-9, A-F)
-    // keypad_out[0]='1', [1]='2', ..., [8]='9', [9]='*', [10]='0', [11]='#'
-    // btn_a=A, btn_b=B, btn_c=C, btn_d=D
-    reg [3:0] keypad_digit;
-    always @(*) begin
-        keypad_digit = 4'd0;
-        // Buttons (High Priority)
-        if (btn_a)      keypad_digit = 4'hA; // 10
-        else if (btn_b) keypad_digit = 4'hB; // 11
-        else if (btn_c) keypad_digit = 4'hC; // 12
-        else if (btn_d) keypad_digit = 4'hD; // 13
-        // Keypad
-        else if (w_value[0])      keypad_digit = 4'd1;
-        else if (w_value[1]) keypad_digit = 4'd2;
-        else if (w_value[2]) keypad_digit = 4'd3;
-        else if (w_value[3]) keypad_digit = 4'd4;
-        else if (w_value[4]) keypad_digit = 4'd5;
-        else if (w_value[5]) keypad_digit = 4'd6;
-        else if (w_value[6]) keypad_digit = 4'd7;
-        else if (w_value[7]) keypad_digit = 4'd8;
-        else if (w_value[8]) keypad_digit = 4'd9;
-        else if (w_value[9]) keypad_digit = 4'hE; // '*' -> E (14)
-        else if (w_value[10]) keypad_digit = 4'd0;  // '0'
-        else if (w_value[11]) keypad_digit = 4'hF; // '#' -> F (15)
-    end
-    assign keypad_display = {8'b0, 4'd0, keypad_digit[3:0]};  // 한 자리 숫자 (0X 형식)
-    
     // Display mode selector
-    // Training complete: display "99" (number mode) for 3 seconds, then return to normal
+    // Training complete: display "99" (number mode)
     // Training mode: display epoch number (number mode, 0-19)
-    // Submit 버튼 눌린 상태: display probability (number mode, 2 digits)
-    // 키패드/버튼 입력: display keypad number (number mode, 1 digit, 0-F)
+    // NN result mode: display probability (number mode, 2 digits)
     // Inference mode: display current input (one-hot mode)
-    assign seg_display_data = done_display_active ? done_display :
+    assign seg_display_data = training_done ? done_display :
                               (training_active ? epoch_display : 
-                              (btn_submit ? prob_display :  // submit 버튼 눌린 상태면 확률 표시
-                              (w_combined_valid ? keypad_display : current_display)));  // 키패드/버튼 입력이면 숫자 표시
-    assign seg_display_valid = done_display_active ? 1'b1 :
+                              (nn_result_valid ? prob_display : current_display));
+    assign seg_display_valid = training_done ? 1'b1 :
                                (training_active ? 1'b1 : 
-                               (btn_submit ? 1'b1 :  // submit 버튼 눌린 상태면 항상 유효
-                               (w_combined_valid ? 1'b1 : display_valid)));  // 키패드/버튼 입력이면 유효
-    assign seg_number_mode = (done_display_active || training_active || btn_submit || w_combined_valid) ? 1'b1 : 1'b0;
+                               (nn_result_valid ? 1'b1 : display_valid));
+    assign seg_number_mode = (training_done || training_active || nn_result_valid) ? 1'b1 : 1'b0;
 
     // OUT - Display on 7-segment
     display_seg DP_SEG (
@@ -256,9 +225,6 @@ module top (
     reg training_done_prev;  // Previous state of training_done for edge detection
     reg [25:0] led_timer;  // Timer for LED (50MHz: 50,000,000 clocks = 1 second)
     reg led_complete_active;  // Flag for LED complete display (1 second)
-    reg [26:0] done_display_timer;  // Timer for "99" display (50MHz: 150,000,000 clocks = 3 seconds)
-    reg done_display_active;  // Flag for "99" display (3 seconds)
-    reg [26:0] nn_result_timer;  // Timer for NN result display (50MHz: 150,000,000 clocks = 3 seconds)
     
     always @(posedge clk or negedge rst) begin
         if (~rst) begin
@@ -267,31 +233,13 @@ module top (
             training_done_prev = 0;
             led_timer = 0;
             led_complete_active = 0;
-            done_display_timer = 0;
-            done_display_active = 0;
-            nn_result_timer = 0;
         end else begin
             // Detect training_done rising edge
             if (training_done && !training_done_prev) begin
                 led_complete_active = 1;
                 led_timer = 0;
-                done_display_active = 1;
-                done_display_timer = 0;
             end
             training_done_prev = training_done;
-            
-            // "99" display timer: 3 seconds (150,000,000 clocks at 50MHz)
-            if (done_display_active) begin
-                if (done_display_timer >= 27'd150000000) begin
-                    done_display_active = 0;
-                    done_display_timer = 0;
-                end else begin
-                    done_display_timer = done_display_timer + 1;
-                end
-            end
-            
-            // nn_result_valid는 더 이상 사용하지 않음 (btn_submit으로 직접 제어)
-            // submit 버튼이 떼어지면 자동으로 해제됨
             
             // LED timer: 1 second (50,000,000 clocks at 50MHz)
             if (led_complete_active) begin
@@ -320,8 +268,12 @@ module top (
                 endcase
             end else begin
                 // Inference mode
-                // submit 버튼이 눌려있는 동안만 NN 결과 표시 (LED)
-                if (btn_submit) begin
+                // When submit button is pressed, show NN result
+                if (btn_submit && !btn_submit_prev) begin
+                    nn_result_valid = 1;
+                end
+                
+                if (nn_result_valid) begin
                     // LED[7]: O(1) or X(0)
                     // LED[6:0]: Probability bar (0-100% mapped to 0-7 LEDs)
                     out_to_led[7] = nn_y;
@@ -336,8 +288,19 @@ module top (
                     else if (nn_o_prob_pct >= 15) out_to_led[6:0] = 7'b0000011;
                     else                          out_to_led[6:0] = 7'b0000001;
                 end else begin
-                    // submit 버튼이 안 눌려있으면 LED off
-                    out_to_led = 8'b00000000;
+                    // Default: running LED pattern
+                    if (cnt_led == 16000000) cnt_led = 0;
+                    else                     cnt_led = cnt_led + 1;
+                    case (cnt_led)
+                        0:        out_to_led = 8'b00000001;
+                        2000000:  out_to_led = 8'b00000010;
+                        4000000:  out_to_led = 8'b00000100;
+                        6000000:  out_to_led = 8'b00001000;
+                        8000000:  out_to_led = 8'b00010000;
+                        10000000: out_to_led = 8'b00100000;
+                        12000000: out_to_led = 8'b01000000;
+                        14000000: out_to_led = 8'b10000000;
+                    endcase
                 end
             end
         end

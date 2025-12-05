@@ -1,6 +1,5 @@
 `timescale 1ns/1ps
 
-
 module keypad_scan (
 	input  clk,
 	input  rst,
@@ -14,13 +13,13 @@ module keypad_scan (
 	integer cnt_clk;
 
 	integer cnt_clk_50KHz;
-   reg     clk_50KHz;
+    reg     clk_50KHz;
 
    always @(posedge clk or negedge rst) begin
       if (~rst) begin
          cnt_clk_50KHz = 0;
          clk_50KHz = 1'b0;
-      end else if (cnt_clk_50KHz >= 1000) begin
+      end else if (cnt_clk_50KHz >= 5000) begin // 1000 -> 5000 (Slower scan for stability: ~10KHz)
          cnt_clk_50KHz = 0;
          clk_50KHz = ~clk_50KHz;
       end else begin
