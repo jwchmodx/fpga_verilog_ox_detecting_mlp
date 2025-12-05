@@ -120,7 +120,7 @@ module top (
         .NUM_TRAIN_X(100)
     ) TRAIN_CTRL (
         .clk(clk),
-        .rst(rst),
+        .rst_n(rst),            // Corrected port name: rst_n
         .btn_train(btn_train),  
         .train_x(train_x),
         .train_learn(train_learn),
