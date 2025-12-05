@@ -74,10 +74,10 @@ module top (
     wire any_button_pressed = btn_a || btn_b || btn_c || btn_d;
     wire [11:0] keypad_masked = any_button_pressed ? 12'b0 : w_value;
     
-    assign w_combined_value = {keypad_masked[2], keypad_masked[1], keypad_masked[0], btn_d,     // #, 0, *, D
-                               keypad_masked[11], keypad_masked[10], keypad_masked[9], btn_c,    // 9, 8, 7, C
-                               keypad_masked[8], keypad_masked[7], keypad_masked[6], btn_b,      // 6, 5, 4, B
-                               keypad_masked[5], keypad_masked[4], keypad_masked[3], btn_a};     // 3, 2, 1, A
+    assign w_combined_value = {keypad_masked[11], keypad_masked[10], keypad_masked[9], btn_d,     // #, 0, *, D
+                               keypad_masked[8], keypad_masked[7], keypad_masked[6], btn_c,    // 9, 8, 7, C
+                               keypad_masked[5], keypad_masked[4], keypad_masked[3], btn_b,      // 6, 5, 4, B
+                               keypad_masked[2], keypad_masked[1], keypad_masked[0], btn_a};     // 3, 2, 1, A
     
     // Button change detection
     always @(posedge clk or negedge rst) begin
@@ -178,39 +178,34 @@ module top (
     wire [7:0] prob_tens;    // Probability tens digit (0-10)
     wire [7:0] prob_ones;    // Probability ones digit (0-9)
     wire [15:0] prob_display; // Probability in BCD format
+    wire [15:0] done_display; // "99" for training complete
     
     // Convert probability to tens and ones digits
     assign prob_tens = nn_o_prob_pct / 10;
     assign prob_ones = nn_o_prob_pct % 10;
     assign prob_display = {8'b0, prob_tens[3:0], prob_ones[3:0]};
     
-    // Convert epoch number to one-hot for display
-    // Display rightmost digit of epoch number (0-9)
-    always @(*) begin
-        case (current_epoch % 10)
-            0: epoch_display = 16'b0100000000000000;  // '0'
-            1: epoch_display = 16'b0000000000000010;  // '1'
-            2: epoch_display = 16'b0000000000000100;  // '2'
-            3: epoch_display = 16'b0000000000001000;  // '3'
-            4: epoch_display = 16'b0000000000100000;  // '4'
-            5: epoch_display = 16'b0000000001000000;  // '5'
-            6: epoch_display = 16'b0000000010000000;  // '6'
-            7: epoch_display = 16'b0000001000000000;  // '7'
-            8: epoch_display = 16'b0000010000000000;  // '8'
-            9: epoch_display = 16'b0000100000000000;  // '9'
-            default: epoch_display = 16'b0;
-        endcase
-    end
+    // Training complete display: "99" (완료 표시)
+    assign done_display = {8'b0, 4'd9, 4'd9};  // 99 in BCD format
+    
+    // Convert epoch number to BCD format for number display
+    // Display epoch number (0-19) as 2-digit number
+    wire [3:0] epoch_tens = current_epoch / 10;  // 10의 자리 (0-1)
+    wire [3:0] epoch_ones = current_epoch % 10;   // 1의 자리 (0-9)
+    assign epoch_display = {8'b0, epoch_tens[3:0], epoch_ones[3:0]};  // BCD format
     
     // Display mode selector
-    // Training mode: display epoch number (one-hot mode)
+    // Training complete: display "99" (number mode)
+    // Training mode: display epoch number (number mode, 0-19)
     // NN result mode: display probability (number mode, 2 digits)
     // Inference mode: display current input (one-hot mode)
-    assign seg_display_data = training_active ? epoch_display : 
-                              (nn_result_valid ? prob_display : current_display);
-    assign seg_display_valid = training_active ? 1'b1 : 
-                                (nn_result_valid ? 1'b1 : display_valid);
-    assign seg_number_mode = nn_result_valid ? 1'b1 : 1'b0;
+    assign seg_display_data = training_done ? done_display :
+                              (training_active ? epoch_display : 
+                              (nn_result_valid ? prob_display : current_display));
+    assign seg_display_valid = training_done ? 1'b1 :
+                               (training_active ? 1'b1 : 
+                               (nn_result_valid ? 1'b1 : display_valid));
+    assign seg_number_mode = (training_done || training_active || nn_result_valid) ? 1'b1 : 1'b0;
 
     // OUT - Display on 7-segment
     display_seg DP_SEG (
@@ -227,13 +222,36 @@ module top (
     // Training mode: Show progress (running LEDs)
     // Inference mode: Show NN result
     reg nn_result_valid;  // Flag to show NN result
+    reg training_done_prev;  // Previous state of training_done for edge detection
+    reg [25:0] led_timer;  // Timer for LED (50MHz: 50,000,000 clocks = 1 second)
+    reg led_complete_active;  // Flag for LED complete display (1 second)
     
     always @(posedge clk or negedge rst) begin
         if (~rst) begin
             out_to_led = 8'b00000000;
             nn_result_valid = 0;
+            training_done_prev = 0;
+            led_timer = 0;
+            led_complete_active = 0;
         end else begin
-            if (training_active) begin
+            // Detect training_done rising edge
+            if (training_done && !training_done_prev) begin
+                led_complete_active = 1;
+                led_timer = 0;
+            end
+            training_done_prev = training_done;
+            
+            // LED timer: 1 second (50,000,000 clocks at 50MHz)
+            if (led_complete_active) begin
+                if (led_timer >= 26'd50000000) begin
+                    led_complete_active = 0;
+                    led_timer = 0;
+                    out_to_led = 8'b00000000;
+                end else begin
+                    led_timer = led_timer + 1;
+                    out_to_led = 8'b11111111;
+                end
+            end else if (training_active) begin
                 // Training mode: Running LEDs to show activity
                 nn_result_valid = 0;
                 if (cnt_led == 4000000) cnt_led = 0;  // Faster animation during training
@@ -248,9 +266,6 @@ module top (
                     3000000: out_to_led = 8'b01000000;
                     3500000: out_to_led = 8'b10000000;
                 endcase
-            end else if (training_done) begin
-                // Training complete: All LEDs on
-                out_to_led = 8'b11111111;
             end else begin
                 // Inference mode
                 // When submit button is pressed, show NN result
