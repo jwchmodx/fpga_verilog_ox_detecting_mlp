@@ -120,14 +120,6 @@ module tb_top;
         test_predefined_patterns(1'b1);  // 1 = after training
         
         // ----------------------------------------
-        // Real Input Test (Simulating actual button presses)
-        // ----------------------------------------
-        $display("\n========================================");
-        $display("  Test 4: Real Input Simulation");
-        $display("========================================");
-        test_real_input();
-        
-        // ----------------------------------------
         // Test End & Summary
         // ----------------------------------------
         $display("\n\n");

@@ -99,8 +99,8 @@ module mlp_OX #(
     sigmoid_fixed #(
         .W     (W),
         .FRAC  (FRAC),
-        .SHIFT (9),
-        .CLIP_X(4)
+        .SHIFT (6),   // 더 민감하게 (9 -> 6)
+        .CLIP_X(8)    // 범위 확대 (4 -> 8)
     ) u_prob_conv (
         .z  (y_score),
         .p_q(prob_q)

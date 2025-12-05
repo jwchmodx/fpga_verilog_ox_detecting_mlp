@@ -37,13 +37,19 @@ module mlp_output_score #(
                 h_act[i] <= (h_val > 0) ? h_val : 0;
             end
 
-            // 출력층: y_score = b_o + sum_i(w_o[i] * 1{h_act[i]>0})
+            // 출력층: y_score = b_o + sum_i(w_o[i] * h_act[i])  (실제 ReLU 값 사용)
             b_ext   = {{(HRAW_W-W){b_o[W-1]}}, b_o};
             y_score = b_ext;
             for (i = 0; i < N; i = i + 1) begin
                 w_val = w_o_bus[i*W +: W];
                 w_ext = {{(HRAW_W-W){w_val[W-1]}}, w_val};
-                y_score = y_score + (h_act[i] > 0 ? w_ext : {HRAW_W{1'b0}});
+                // 실제 ReLU 활성화 값을 사용 (더 정확한 계산)
+                // h_act[i]는 이미 ReLU가 적용된 값이므로 그대로 곱함
+                // 간단한 근사: w_o[i] * h_act[i] ≈ w_o[i] * (h_act[i] >> 3) for scaling
+                if (h_act[i] > 0) begin
+                    // h_act[i]를 스케일링하여 곱셈 (비트 시프트로 근사)
+                    y_score = y_score + ((w_ext * h_act[i]) >>> 3);
+                end
             end
         end
     end
