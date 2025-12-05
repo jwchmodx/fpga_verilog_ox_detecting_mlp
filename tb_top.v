@@ -328,12 +328,13 @@ module tb_top;
             result = DUT.nn_y;
             is_correct = (result == expected_O);
             
-            // Display results (simple format)
-            $display("  %04h: Expected=%s, Got=%s, Prob=%0d%% [%s]", 
+            // Display results (with actual score)
+            $display("  %04h: Expected=%s, Got=%s, Prob=%0d%%, Score=%0d [%s]", 
                      pattern, 
                      expected_O ? "O" : "X", 
                      result ? "O" : "X", 
                      DUT.nn_o_prob_pct,
+                     DUT.nn_y_score,  // 실제 y_score 출력 (top.v에서 nn_y_score로 선언됨)
                      is_correct ? "OK" : "FAIL");
             
             // Release submit and force

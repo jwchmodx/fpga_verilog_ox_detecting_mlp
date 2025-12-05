@@ -7,7 +7,7 @@
 //   - y_score_out: 출력층 raw score
 //   - hidden_score: hidden pre-activation 합산 스코어
 //   - o_prob_pct: O일 "확률(추정)" 0~100%
-//====================================================
+//====================================================ㅁㄴㅇㅁㄴㅇ
 module mlp_OX #(
     parameter W    = 8,
     parameter N    = 8,
@@ -99,8 +99,8 @@ module mlp_OX #(
     sigmoid_fixed #(
         .W     (W),
         .FRAC  (FRAC),
-        .SHIFT (6),   // 더 민감하게 (9 -> 6)
-        .CLIP_X(8)    // 범위 확대 (4 -> 8)
+        .SHIFT (9),   // Score 범위에 맞게 조정 (600/512≈1.2, 696/512≈1.4, 888/512≈1.7, 952/512≈1.9)
+        .CLIP_X(4)    // 범위 조정 (Score 범위에 맞게)
     ) u_prob_conv (
         .z  (y_score),
         .p_q(prob_q)

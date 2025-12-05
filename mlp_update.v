@@ -35,23 +35,24 @@ module mlp_update #(
 
     always @(posedge clk) begin
         if (!rst_n) begin
+            // 출력 bias를 0으로 초기화 (가장 중립적)
             b_o <= 0;
             for (i = 0; i < N; i = i + 1) begin
-                // 가중치 초기화: 작은 범위로 균등 분포 (ReLU 클리핑 고려)
-                // 출력층: 0 ~ +15 (작은 양수, 초기 출력이 골고루 분포되도록)
-                w_o[i] <= ($random % 16);   // 초기화: 0 ~ +15
-                // 히든 bias: 작은 음수로 설정하여 일부 뉴런만 활성화 (골고루 분포)
-                b_h[i] <= ($random % 16) - 12;    // bias: -12 ~ +3 (약간 음수 중심)
-                // 입력-히든 가중치: 작은 범위로 초기화 (양수/음수 균형)
+                // 가중치 초기화: -8 ~ +7 (완벽한 균형)
+                // 이렇게 하면 초기 Score 합계가 0 근처가 되어 확률이 50%에서 시작함
+                w_o[i] <= ($random % 16) - 8;
+                // 히든 bias: 0 근처로 설정하여 활성화가 절반 정도 되도록 유도
+                b_h[i] <= ($random % 16) - 8;
+                // 입력 가중치: -8 ~ +7
                 for (j = 0; j < 16; j = j + 1)
-                    w_h[i][j] <= ($random % 16) - 8;  // 초기화: -8 ~ +7 (작은 범위)
+                    w_h[i][j] <= ($random % 16) - 8;
             end
         end else if (learn) begin
             for (i = 0; i < N; i = i + 1) begin
                 h_val   = h_act_bus[i*HRAW_W +: HRAW_W];
 
-                // 출력층 업데이트 (학습률 조정: FRAC-2 = 4배, 안정적인 학습)
-                delta_o = ((err * (h_val > 0)) >>> (FRAC-2));  // 4배 학습률
+                // 출력층 업데이트 (학습률 조정: FRAC-1 = 2배, 더 안정적인 학습)
+                delta_o = ((err * (h_val > 0)) >>> (FRAC-1));  // 2배 학습률 (절반으로 감소)
                 // 가중치 클리핑: -128 ~ +127 범위 유지
                 if (w_o[i] + delta_o > 127)
                     w_o[i] <= 127;
@@ -60,8 +61,8 @@ module mlp_update #(
                 else
                     w_o[i] <= w_o[i] + delta_o;
 
-                // hidden bias 업데이트 (학습률 조정)
-                delta_bh = ((err * w_o[i]) >>> (FRAC-2));
+                // hidden bias 업데이트 (학습률 조정: 절반으로 감소)
+                delta_bh = ((err * w_o[i]) >>> (FRAC-1));  // 2배 학습률
                 if (b_h[i] + delta_bh > 127)
                     b_h[i] <= 127;
                 else if (b_h[i] + delta_bh < -128)
@@ -69,9 +70,9 @@ module mlp_update #(
                 else
                     b_h[i] <= b_h[i] + delta_bh;
 
-                // 입력-히든 가중치 업데이트 (학습률 조정)
+                // 입력-히든 가중치 업데이트 (학습률 조정: 절반으로 감소)
                 for (j = 0; j < 16; j = j + 1) begin
-                    delta_h = ((err * w_o[i] * (x[j] ? 1 : -1)) >>> (2*FRAC-2));
+                    delta_h = ((err * w_o[i] * (x[j] ? 1 : -1)) >>> (2*FRAC-1));  // 5배 학습률
                     if (w_h[i][j] + delta_h > 127)
                         w_h[i][j] <= 127;
                     else if (w_h[i][j] + delta_h < -128)
@@ -80,8 +81,8 @@ module mlp_update #(
                         w_h[i][j] <= w_h[i][j] + delta_h;
                 end
             end
-            // 출력 bias 업데이트 (클리핑 포함)
-            delta_bo = (err >>> 2);
+            // 출력 bias 업데이트 (학습률 조정: 절반으로 감소, 클리핑 포함)
+            delta_bo = (err >>> 3);  // 2배 학습률 (>>> 2 → >>> 3)
             if (b_o + delta_bo > 127)
                 b_o <= 127;
             else if (b_o + delta_bo < -128)

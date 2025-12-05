@@ -37,18 +37,26 @@ module mlp_output_score #(
                 h_act[i] <= (h_val > 0) ? h_val : 0;
             end
 
-            // 출력층: y_score = b_o + sum_i(w_o[i] * h_act[i])  (실제 ReLU 값 사용)
+            // 출력층: y_score = b_o + sum_i(w_o[i] * scaled_h_act[i])
+            // h_act[i]의 크기에 따라 다른 스케일링 적용하여 다양성 향상
             b_ext   = {{(HRAW_W-W){b_o[W-1]}}, b_o};
             y_score = b_ext;
             for (i = 0; i < N; i = i + 1) begin
                 w_val = w_o_bus[i*W +: W];
                 w_ext = {{(HRAW_W-W){w_val[W-1]}}, w_val};
-                // 실제 ReLU 활성화 값을 사용 (더 정확한 계산)
-                // h_act[i]는 이미 ReLU가 적용된 값이므로 그대로 곱함
-                // 간단한 근사: w_o[i] * h_act[i] ≈ w_o[i] * (h_act[i] >> 3) for scaling
+                // h_act[i]의 크기에 따라 다른 스케일링 적용
                 if (h_act[i] > 0) begin
-                    // h_act[i]를 스케일링하여 곱셈 (비트 시프트로 근사)
-                    y_score = y_score + ((w_ext * h_act[i]) >>> 3);
+                    // h_act[i]의 크기를 3단계로 분류하여 다양성 향상
+                    if (h_act[i] > (1 << (HRAW_W-2))) begin
+                        // 큰 활성화: 전체 가중치 적용
+                        y_score = y_score + w_ext;
+                    end else if (h_act[i] > (1 << (HRAW_W-3))) begin
+                        // 중간 활성화: 가중치의 3/4 적용
+                        y_score = y_score + ((w_ext * 3) >>> 2);
+                    end else begin
+                        // 작은 활성화: 가중치의 1/2 적용
+                        y_score = y_score + (w_ext >>> 1);
+                    end
                 end
             end
         end
