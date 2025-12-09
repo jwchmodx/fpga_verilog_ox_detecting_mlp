@@ -184,8 +184,9 @@ module top (
     wire [15:0] done_display; // "99" for training complete
     
     // Convert probability to tens and ones digits
-    assign prob_tens = nn_o_prob_pct / 10;
-    assign prob_ones = nn_o_prob_pct % 10;
+    // 100%일 경우 99%로 클리핑하여 표시 (2자리 세그먼트 한계)
+    assign prob_tens = (nn_o_prob_pct >= 100) ? 9 : (nn_o_prob_pct / 10);
+    assign prob_ones = (nn_o_prob_pct >= 100) ? 9 : (nn_o_prob_pct % 10);
     assign prob_display = {8'b0, prob_tens[3:0], prob_ones[3:0]};
     
     // Training complete display: "99" (완료 표시)
