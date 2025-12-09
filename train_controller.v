@@ -250,8 +250,8 @@ module train_controller #(
     reg btn_train_prev;
     
     // 학습 속도 조절 (클럭 분주)
-    reg [15:0] train_delay_cnt;
-    localparam TRAIN_DELAY = 16'd10; // 샘플당 대기 시간 (클럭 사이클) - 50 -> 10으로 감소 (5배 빠름)
+    reg [19:0] train_delay_cnt;  // 20비트
+    localparam TRAIN_DELAY = 20'd150000; // 샘플당 대기 시간: 150,000클럭 (50MHz 기준 3ms) -> 전체 약 6초 소요 (10에폭 기준)
     
     always @(posedge clk or negedge rst_n) begin
         if (~rst_n) begin
