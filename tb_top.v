@@ -96,6 +96,14 @@ module tb_top;
         $display("========================================");
         
         // ----------------------------------------
+        // Random Initialization & Score Distribution Test
+        // ----------------------------------------
+        $display("\n========================================");
+        $display("  Test 0: Initial Score Distribution Check");
+        $display("========================================");
+        test_random_initialization();
+
+        // ----------------------------------------
         // Pre-Training Test (Before Learning)
         // ----------------------------------------
         $display("\n========================================");
@@ -104,20 +112,28 @@ module tb_top;
         test_predefined_patterns(1'b0);  // 0 = before training
         
         // ----------------------------------------
-        // Training Test
+        // Real Input Simulation Test
         // ----------------------------------------
         $display("\n========================================");
-        $display("  Test 2: Training Neural Network");
+        $display("  Test 2: Real Input Simulation");
         $display("========================================");
-        test_training();
+        test_real_input();
+
+        // ----------------------------------------
+        // Training Test (Disabled)
+        // ----------------------------------------
+        //$display("\n========================================");
+        //$display("  Test 3: Training Neural Network");
+        //$display("========================================");
+        //test_training();
         
         // ----------------------------------------
-        // Post-Training Test (After Learning)
+        // Post-Training Test (After Learning) (Disabled)
         // ----------------------------------------
-        $display("\n========================================");
-        $display("  Test 3: AFTER Training");
-        $display("========================================");
-        test_predefined_patterns(1'b1);  // 1 = after training
+        //$display("\n========================================");
+        //$display("  Test 4: AFTER Training");
+        //$display("========================================");
+        //test_predefined_patterns(1'b1);  // 1 = after training
         
         // ----------------------------------------
         // Test End & Summary
@@ -176,17 +192,20 @@ module tb_top;
         end
     end
     
-    // 7-segment data change monitoring (commented out to reduce spam)
-    // always @(out_to_seg_data) begin
-    //     if (out_to_seg_data != 8'h00)
-    //         $display("[%0t ns] SEG_DATA Change: %h (binary: %b)", $time, out_to_seg_data, out_to_seg_data);
-    // end
+    // 7-segment data change monitoring
+    always @(out_to_seg_data) begin
+        if (out_to_seg_data != 8'h00)
+            $display("[%0t ns] SEG_DATA Change: %h (binary: %b) [Submit=%b]", 
+                     $time, out_to_seg_data, out_to_seg_data, btn_submit);
+    end
     
     // Monitor input accumulation (only in inference mode)
     always @(DUT.INPUT_MGR.input_count) begin
-        if (!DUT.training_active && DUT.INPUT_MGR.input_count > 0)
-            $display("[%0t ns] Input count: %d, Current display: %b", 
+        if (!DUT.training_active && DUT.INPUT_MGR.input_count > 0) begin
+            #1; // Wait for signals to settle
+            $display("[%0t ns] Input count: %2d, Current display: %b", 
                      $time, DUT.INPUT_MGR.input_count, DUT.current_display);
+        end
     end
     
     // Keypad scan output monitoring (commented out to prevent excessive output)
@@ -475,6 +494,33 @@ module tb_top;
         end
     endtask
     
+    // Task: Check initial score distribution
+    task test_random_initialization;
+        integer k;
+        reg [15:0] test_pat;
+        begin
+            $display("Checking initial scores/probabilities for various patterns...");
+            $display("Expected: Scores should vary (not just 0) and Probabilities should not all be 50%%");
+            
+            // Test 10 Random Patterns to see distribution
+            for (k = 0; k < 10; k = k + 1) begin
+                test_pat = $random;
+                // Inject pattern
+                force DUT.INPUT_MGR.combined_input_flags = test_pat;
+                btn_submit = 1;
+                repeat(50) @(posedge clk); // Sufficient time for calculation
+                
+                $display("  Pattern %04h: Score=%6d, Prob=%3d%%, Result=%s", 
+                         test_pat, DUT.nn_y_score, DUT.nn_o_prob_pct, DUT.nn_y ? "O" : "X");
+                
+                btn_submit = 0;
+                release DUT.INPUT_MGR.combined_input_flags;
+                repeat(50) @(posedge clk);
+            end
+            $display("--------------------------------------------------\n");
+        end
+    endtask
+
     // Task: Press a keypad key with specified duration
     task press_keypad_with_duration;
         input [3:0] target_row;

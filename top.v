@@ -66,18 +66,21 @@ module top (
     keypad_scan KS (.clk(clk), .rst(rst), .in_from_keypad(in_from_keypad), // input
                     .out_to_keypad(out_to_keypad), .out(w_value), .valid(w_valid)); // output
 
-    // Combine keypad and buttons in specific order: A,1,2,3,B,4,5,6,C,7,8,9,D,*,0,#
-    // bit[0]:A, bit[1]:1, bit[2]:2, bit[3]:3, bit[4]:B, bit[5]:4, bit[6]:5, bit[7]:6
-    // bit[8]:C, bit[9]:7, bit[10]:8, bit[11]:9, bit[12]:D, bit[13]:*, bit[14]:0, bit[15]:#
-    // Adjusted mapping: keypad scan has 1-clock delay, so shift by 3 positions
-    // When button is pressed, ignore keypad values (use only buttons)
+    // Combine keypad and buttons
+    // Order: A,1,2,3 | B,4,5,6 | C,7,8,9 | D,*,0,#
+    // Mapping:
+    // [0-3]: A, 1, 2, 3
+    // [4-7]: B, 4, 5, 6
+    // [8-11]: C, 7, 8, 9
+    // [12-15]: D, #, 0, * (Note: keypad.v output mapping matches this group)
+    
     wire any_button_pressed = btn_a || btn_b || btn_c || btn_d;
     wire [11:0] keypad_masked = any_button_pressed ? 12'b0 : w_value;
     
-    assign w_combined_value = {keypad_masked[11], keypad_masked[10], keypad_masked[9], btn_d,     // #, 0, *, D
-                               keypad_masked[8], keypad_masked[7], keypad_masked[6], btn_c,    // 9, 8, 7, C
-                               keypad_masked[5], keypad_masked[4], keypad_masked[3], btn_b,      // 6, 5, 4, B
-                               keypad_masked[2], keypad_masked[1], keypad_masked[0], btn_a};     // 3, 2, 1, A
+    assign w_combined_value = {keypad_masked[8], keypad_masked[7], keypad_masked[6], btn_d,     // #, 0, *, D
+                               keypad_masked[5], keypad_masked[4], keypad_masked[3], btn_c,    // 9, 8, 7, C
+                               keypad_masked[2], keypad_masked[1], keypad_masked[0], btn_b,      // 6, 5, 4, B
+                               keypad_masked[11], keypad_masked[10], keypad_masked[9], btn_a};     // 3, 2, 1, A
     
     // Button change detection
     always @(posedge clk or negedge rst) begin
@@ -179,7 +182,6 @@ module top (
     wire [7:0] prob_ones;    // Probability ones digit (0-9)
     wire [15:0] prob_display; // Probability in BCD format
     wire [15:0] done_display; // "99" for training complete
-    wire [15:0] keypad_display; // 키패드 입력 숫자 표시
     
     // Convert probability to tens and ones digits
     assign prob_tens = nn_o_prob_pct / 10;
@@ -195,48 +197,30 @@ module top (
     wire [3:0] epoch_ones = current_epoch % 10;   // 1의 자리 (0-9)
     assign epoch_display = {8'b0, epoch_tens[3:0], epoch_ones[3:0]};  // BCD format
     
-    // 키패드 및 버튼 입력을 숫자로 변환 (0-9, A-F)
-    // keypad_out[0]='1', [1]='2', ..., [8]='9', [9]='*', [10]='0', [11]='#'
-    // btn_a=A, btn_b=B, btn_c=C, btn_d=D
-    reg [3:0] keypad_digit;
-    always @(*) begin
-        keypad_digit = 4'd0;
-        // Buttons (High Priority)
-        if (btn_a)      keypad_digit = 4'hA; // 10
-        else if (btn_b) keypad_digit = 4'hB; // 11
-        else if (btn_c) keypad_digit = 4'hC; // 12
-        else if (btn_d) keypad_digit = 4'hD; // 13
-        // Keypad
-        else if (w_value[0])      keypad_digit = 4'd1;
-        else if (w_value[1]) keypad_digit = 4'd2;
-        else if (w_value[2]) keypad_digit = 4'd3;
-        else if (w_value[3]) keypad_digit = 4'd4;
-        else if (w_value[4]) keypad_digit = 4'd5;
-        else if (w_value[5]) keypad_digit = 4'd6;
-        else if (w_value[6]) keypad_digit = 4'd7;
-        else if (w_value[7]) keypad_digit = 4'd8;
-        else if (w_value[8]) keypad_digit = 4'd9;
-        else if (w_value[9]) keypad_digit = 4'hE; // '*' -> E (14)
-        else if (w_value[10]) keypad_digit = 4'd0;  // '0'
-        else if (w_value[11]) keypad_digit = 4'hF; // '#' -> F (15)
-    end
-    assign keypad_display = {8'b0, 4'd0, keypad_digit[3:0]};  // 한 자리 숫자 (0X 형식)
+    // 키패드 매핑용 변수와 로직은 이제 불필요하므로 제거해도 되지만, 
+    // 나중을 위해 주석 처리하거나 무시됨.
     
     // Display mode selector
     // Training complete: display "99" (number mode) for 3 seconds, then return to normal
     // Training mode: display epoch number (number mode, 0-19)
     // Submit 버튼 눌린 상태: display probability (number mode, 2 digits)
-    // 키패드/버튼 입력: display keypad number (number mode, 1 digit, 0-F)
+    // 키패드/버튼 입력: display current input (one-hot mode, 8 digits same value)
     // Inference mode: display current input (one-hot mode)
+    
+    // NOTE: w_combined_valid가 있을 때도 number_mode를 0으로 유지하여 
+    // display_seg 모듈이 one-hot 매핑 테이블을 사용하도록 함.
     assign seg_display_data = done_display_active ? done_display :
                               (training_active ? epoch_display : 
-                              (btn_submit ? prob_display :  // submit 버튼 눌린 상태면 확률 표시
-                              (w_combined_valid ? keypad_display : current_display)));  // 키패드/버튼 입력이면 숫자 표시
+                              (btn_submit ? prob_display : 
+                              current_display)); // Use current_display directly
+                              
     assign seg_display_valid = done_display_active ? 1'b1 :
                                (training_active ? 1'b1 : 
                                (btn_submit ? 1'b1 :  // submit 버튼 눌린 상태면 항상 유효
                                (w_combined_valid ? 1'b1 : display_valid)));  // 키패드/버튼 입력이면 유효
-    assign seg_number_mode = (done_display_active || training_active || btn_submit || w_combined_valid) ? 1'b1 : 1'b0;
+                               
+    // NOTE: Removed w_combined_valid from number_mode condition
+    assign seg_number_mode = (done_display_active || training_active || btn_submit) ? 1'b1 : 1'b0;
 
     // OUT - Display on 7-segment
     display_seg DP_SEG (

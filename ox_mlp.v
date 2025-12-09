@@ -99,7 +99,7 @@ module mlp_OX #(
     sigmoid_fixed #(
         .W     (W),
         .FRAC  (FRAC),
-        .SHIFT (9),   // Score 범위에 맞게 조정 (600/512≈1.2, 696/512≈1.4, 888/512≈1.7, 952/512≈1.9)
+        .SHIFT (6),   // 민감도 향상: 9(512) -> 6(64). 작은 점수 변화에도 확률이 크게 변하도록 수정
         .CLIP_X(4)    // 범위 조정 (Score 범위에 맞게)
     ) u_prob_conv (
         .z  (y_score),
